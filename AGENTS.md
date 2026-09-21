@@ -34,3 +34,5 @@ The user has authorized the initial frontend and backend scaffold, dependency in
 Limit the frontend to a Home page displaying the project name and tagline, with React Router and no UI framework. The first database layer is authorized: District, CitizenRequest, and InfrastructureMetric models, fictional demo seed data, and read-only district endpoints. Keep the health endpoint working. Do not add create/update/delete endpoints until requested.
 
 Do not add a dashboard, Gemini, Google Maps, authentication, deployment, or other project features until requested.
+
+The read-only water-priority analytics endpoint is also authorized. Keep scoring weights and priority thresholds in named configuration, document the prototype heuristic and missing-data behavior, and do not describe scores as an official methodology or AI predictions. Other analytics domains are not authorized.

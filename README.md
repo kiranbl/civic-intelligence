@@ -119,6 +119,38 @@ Run the seed serially, not concurrently. It uses a transaction, preserves existi
 
 Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. No write endpoints or frontend data pages are implemented.
 
+## Water-priority analytics
+
+`GET /api/analytics/water-priority` returns every district in `{ success, data, methodology }`. This is a **prototype relative infrastructure-priority heuristic**, not an official government methodology or an AI prediction. The existing seed populations, requests, and coverage values remain fictional demo data. Scores are relative to the districts in this response, not absolute measures of need or comparable scores across changing comparison sets.
+
+The module follows routes -> controllers -> services -> Prisma. Weights, thresholds, and equal-demand behavior are configured in `backend/src/config/waterPriority.js`; the calculation is in `backend/src/services/waterPriority.service.js`.
+
+For each district:
+
+1. Count all stored requests with category `WATER`, without a date filter.
+2. Calculate `waterRequestsPer100k = waterRequestCount / population * 100000`.
+3. Normalize those rates using `(rate - minimumRate) / (maximumRate - minimumRate) * 100`.
+4. Select `TAP_WATER_COVERAGE` by descending `sourceYear`, then `createdAt`, then `id`. Values are interpreted as percentages on a 0–100 scale; no unit conversion is performed.
+5. Calculate `infrastructureGap = 100 - tapWaterCoverage`.
+6. Calculate `priorityScore = demandIndex * 0.5 + infrastructureGap * 0.5`.
+
+| Displayed score | Demo priority level |
+| --- | --- |
+| 0 <= score < 25 | LOW |
+| 25 <= score < 50 | MEDIUM |
+| 50 <= score < 75 | HIGH |
+| 75 <= score <= 100 | VERY_HIGH |
+
+Intermediate calculations retain full precision. Display values are rounded to two decimal places, and the priority level uses the rounded score. JSON numbers may omit trailing zeros. Complete records appear first, sorted by displayed priority score descending; tied scores and incomplete records use ascending district ID for deterministic ordering.
+
+Equal rates, including a single district or all-zero counts, produce demandIndex `0`: there is no relative demand distinction, so only the infrastructure-gap component contributes. This does not imply an absence of citizen need.
+
+Missing coverage or a nonfinite/out-of-range value produces `INCOMPLETE`, with null coverage, gap, score, and level. The newest invalid coverage record is not silently replaced with an older value. Demand can still be calculated and participates in normalization. A nonpositive or invalid population produces null rate, demand index, score, and level; it is excluded from normalization, while valid coverage and gap remain available. Missing values are never invented. No districts returns an empty array. Database failures use the existing generic HTTP 500 response.
+
+Example from the unchanged demo database: Mandya has 1 water request and a fictional population of 65,000. Its rate is `1 / 65000 * 100000 = 1.5384615...`. Across all eight districts the minimum rate is `0.8333333...` and maximum is `1.8181818...`. Mandya's demand index is `(1.5384615... - 0.8333333...) / (1.8181818... - 0.8333333...) * 100 = 71.5976331...`. With fictional coverage of 49%, its gap is `51`, and score is `71.5976331... * 0.5 + 51 * 0.5 = 61.2988165...`, displayed as **61.30 (HIGH)**.
+
+The backend suite includes scoring, rounding, threshold boundaries, equal demand, missing/invalid data, ordering, query filters, and safe database error handling. The analytics implementation was verified with all 38 backend tests, syntax checks across all 21 backend JavaScript files, and a live response against the unchanged MySQL demo data.
+
 ## Run locally
 
 In one terminal:
