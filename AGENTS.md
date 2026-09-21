@@ -31,6 +31,6 @@ The goal is to build a multilingual AI platform that analyses citizen developmen
 
 The user has authorized the initial frontend and backend scaffold, dependency installation, and validation.
 
-Limit the frontend to a Home page displaying the project name and tagline, with React Router and no UI framework. Limit the backend to the health endpoint and basic middleware. Configure Prisma for MySQL without database models.
+Limit the frontend to a Home page displaying the project name and tagline, with React Router and no UI framework. The first database layer is authorized: District, CitizenRequest, and InfrastructureMetric models, fictional demo seed data, and read-only district endpoints. Keep the health endpoint working. Do not add create/update/delete endpoints until requested.
 
 Do not add a dashboard, Gemini, Google Maps, authentication, deployment, or other project features until requested.

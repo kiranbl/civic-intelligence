@@ -11,6 +11,8 @@ export function errorHandler(error, req, res, next) {
 
   if (status === 400) {
     message = 'Invalid request';
+  } else if (status === 404) {
+    message = 'District not found';
   } else if (status === 413) {
     message = 'Request body too large';
   } else if (status < 500) {

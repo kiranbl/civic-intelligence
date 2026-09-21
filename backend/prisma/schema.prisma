@@ -7,4 +7,73 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Database models will be added in a later task.
+enum Channel {
+  TEXT
+  VOICE
+  MESSAGING
+}
+
+enum Category {
+  WATER
+  ROADS
+  HEALTHCARE
+  EDUCATION
+  SANITATION
+  TRANSPORT
+  ELECTRICITY
+  OTHER
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model District {
+  id             Int                    @id @default(autoincrement())
+  name           String
+  state          String
+  population     Int
+  latitude       Float?
+  longitude      Float?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  requests       CitizenRequest[]
+  infrastructure InfrastructureMetric[]
+
+  @@unique([name, state])
+}
+
+model CitizenRequest {
+  id           Int      @id @default(autoincrement())
+  districtId   Int
+  originalText String   @db.Text
+  language     String
+  channel      Channel
+  category     Category
+  subcategory  String?
+  urgency      Urgency?
+  latitude     Float?
+  longitude    Float?
+  createdAt    DateTime @default(now())
+  district     District @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([districtId, createdAt])
+}
+
+model InfrastructureMetric {
+  id         Int      @id @default(autoincrement())
+  districtId Int
+  metricType String
+  value      Float
+  unit       String
+  source     String
+  sourceYear Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  district   District @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([districtId, metricType])
+}

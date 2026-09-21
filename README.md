@@ -6,12 +6,14 @@ Built for the Google Build with AI: Code for Communities hackathon. The intended
 
 ## Current scope
 
-This repository contains the initial scaffold only:
+This repository contains the application scaffold and first database layer:
 
 - React + Vite frontend in JavaScript, using React Router and plain CSS.
 - One Home page with the project name and tagline.
 - Node.js + Express API with dotenv, cors, JSON parsing, and centralized error handling.
-- Prisma ORM configured for MySQL, with no models or database queries.
+- Prisma ORM configured for MySQL with District, CitizenRequest, and InfrastructureMetric models.
+- Read-only district, citizen request, and infrastructure endpoints.
+- Clearly fictional demo fixtures for eight Karnataka districts.
 - Backend HTTP tests using Node's built-in test runner.
 
 Gemini, Google Maps, authentication, dashboards, and Google Cloud deployment are deferred.
@@ -19,7 +21,7 @@ Gemini, Google Maps, authentication, dashboards, and Google Cloud deployment are
 ## Requirements
 
 - Node.js 22.12 or newer (verified locally with Node.js 24.14.0) and npm.
-- MySQL will be needed when database features are added. It is not required to run the Home page, health endpoint, tests, or schema validation.
+- MySQL 8 for migrations, seeding, and district endpoints. It is not required to run the Home page, health endpoint, mocked HTTP tests, or schema validation.
 
 ## Structure
 
@@ -38,15 +40,17 @@ frontend/
   package.json
 backend/
   prisma/
-    schema.prisma    # MySQL datasource and client generator; no models
-    migrations/      # Reserved; no migrations yet
+    schema.prisma    # MySQL models, enums, indexes, and relationships
+    migrations/      # Versioned SQL migrations
+    demoData.js       # Fictional demo fixtures; replace before real-world use
+    seed.js           # Repeatable demo seed
   src/
-    config/          # Reserved for configuration helpers
+    config/          # Shared Prisma client
     controllers/     # HTTP request and response handling
     middleware/      # Centralized error handling
     routes/          # Endpoint definitions
     services/        # Business logic and future database operations
-    validators/      # Reserved for future API input validation
+    validators/      # Numeric district ID validation
     app.js           # Express configuration, without listening on a port
     server.js        # Environment loading and server startup
   tests/
@@ -82,7 +86,38 @@ PORT=3000
 DATABASE_URL="mysql://USER:PASSWORD@localhost:3306/civic_intelligence"
 ```
 
-Replace the database placeholders locally when database work begins. The health endpoint does not use `DATABASE_URL`. Local `.env` files are ignored by Git; commit only placeholder examples. Frontend `VITE_` variables are public browser configuration and must never contain secrets. `VITE_API_URL` is provided for later API calls and is not consumed by the Home page.
+Replace the database placeholders in your local `backend/.env` with your MySQL credentials. The health endpoint does not query MySQL. Local `.env` files are ignored by Git; commit only placeholder examples. Frontend `VITE_` variables are public browser configuration and must never contain secrets. `VITE_API_URL` is provided for later API calls and is not consumed by the Home page.
+
+From `backend/`, apply the committed migration, generate the client, and seed:
+
+```powershell
+npx prisma migrate deploy
+npm run prisma:generate
+npm run prisma:seed
+```
+
+For future schema changes, `npm run prisma:migrate -- --name descriptive_name` creates and applies a development migration. Prisma may require permission to create a shadow database for that command. Do not reset a database containing data you need.
+
+## Database layer and demo data
+
+The initial migration is `20260921123312_initial_database_layer`. A district's name is unique within its state. Requests and metrics have indexed district foreign keys; deleting a district with related records is restricted. Requests use a MySQL `TEXT` column and enums for channel, category, and urgency. The tables use `utf8mb4` to preserve multilingual text.
+
+The seed creates eight Karnataka districts: Bengaluru Urban, Bengaluru Rural, Mysuru, Mandya, Tumakuru, Hassan, Kolar, and Ramanagara. A fresh database receives **8 districts, 32 citizen requests (4 per district), and 8 infrastructure metrics (1 per district)**.
+
+**Every seeded population and water coverage value is fictional DEMO data, not Census data or any official dataset. Replace these fixtures before real-world planning.** The requests are invented English, Kannada, and Hindi examples and each has a `[DEMO ONLY ...]` prefix. All metrics use `TAP_WATER_COVERAGE`, unit `percent`, and an explicitly fictional demo source; their source year is illustrative too. Coordinates are left null rather than invented.
+
+Run the seed serially, not concurrently. It uses a transaction, preserves existing districts, and inserts only missing demo requests and metrics, so sequential reruns do not duplicate these fixtures or delete other records. It does not overwrite existing populations or refresh existing demo values when fixture values change. Its printed totals describe the demo set ensured, not newly inserted rows or the entire database.
+
+## Read-only district endpoints
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/api/districts` | Districts sorted by name and state |
+| GET | `/api/districts/:id` | One district |
+| GET | `/api/districts/:id/requests` | That district's requests, newest first |
+| GET | `/api/districts/:id/infrastructure` | That district's infrastructure metrics |
+
+Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. No write endpoints or frontend data pages are implemented.
 
 ## Run locally
 
@@ -130,16 +165,17 @@ Unknown routes return a JSON 404. The centralized error handler returns safe JSO
 ```powershell
 cd backend
 npm test
+npm run prisma:format
 npm run prisma:validate
 cd ../frontend
 npm run build
 ```
 
-Schema validation requires `DATABASE_URL` to be defined; the placeholder in your local backend `.env` is sufficient because validation does not connect to MySQL. Tests start and close their own local HTTP server and do not require `.env` or a database.
+Schema validation requires `DATABASE_URL` to be defined; the placeholder in your local backend `.env` is sufficient because validation does not connect to MySQL. Generate Prisma Client before running the tests on a fresh checkout. Tests start and close their own local HTTP server and mock database queries, so no MySQL connection is required. Coverage includes district reads, empty collections, invalid IDs, unknown districts, hidden database errors, unavailable write endpoints, and the original health/middleware behavior.
 
 The frontend build is written to ignored `frontend/dist/`. Use `npm run preview` from `frontend/` to preview that build locally.
 
-No migrations or database models exist yet. The `prisma:generate` script is provided for use after models are added; client generation is deferred for the empty schema. Do not run migrations or create models as part of this scaffold.
+The first database layer was verified with Prisma format/validate, migration application, client generation, two seed runs, and all 21 backend tests. Additional live HTTP checks against MySQL confirmed all district reads, exact seed counts, multilingual text preservation, invalid/missing IDs, and health. An initial Node test-mock incompatibility with Prisma proxy methods was fixed before the passing run.
 
 ## Initial verification and known issues
 
