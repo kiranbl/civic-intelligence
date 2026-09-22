@@ -36,3 +36,5 @@ Limit the frontend to a Home page displaying the project name and tagline, with 
 Do not add a dashboard, Gemini, Google Maps, authentication, deployment, or other project features until requested.
 
 The read-only water-priority analytics endpoint is also authorized. Keep scoring weights and priority thresholds in named configuration, document the prototype heuristic and missing-data behavior, and do not describe scores as an official methodology or AI predictions. Other analytics domains are not authorized.
+
+Census 2011 population ingestion is authorized for the eight existing Karnataka districts. Preserve raw workbooks, use explicit inspected district aliases and district Total rows, validate and dry-run before updating, and store population provenance. Treat 2011 population as historical context, not a current estimate. Do not change citizen requests, infrastructure metrics, or the water-priority algorithm during this import.

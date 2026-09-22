@@ -14,6 +14,7 @@ This repository contains the application scaffold and first database layer:
 - Prisma ORM configured for MySQL with District, CitizenRequest, and InfrastructureMetric models.
 - Read-only district, citizen request, and infrastructure endpoints.
 - Clearly fictional demo fixtures for eight Karnataka districts.
+- Validated Census 2011 district population import with source/year provenance.
 - Backend HTTP tests using Node's built-in test runner.
 
 Gemini, Google Maps, authentication, dashboards, and Google Cloud deployment are deferred.
@@ -104,9 +105,57 @@ The initial migration is `20260921123312_initial_database_layer`. A district's n
 
 The seed creates eight Karnataka districts: Bengaluru Urban, Bengaluru Rural, Mysuru, Mandya, Tumakuru, Hassan, Kolar, and Ramanagara. A fresh database receives **8 districts, 32 citizen requests (4 per district), and 8 infrastructure metrics (1 per district)**.
 
-**Every seeded population and water coverage value is fictional DEMO data, not Census data or any official dataset. Replace these fixtures before real-world planning.** The requests are invented English, Kannada, and Hindi examples and each has a `[DEMO ONLY ...]` prefix. All metrics use `TAP_WATER_COVERAGE`, unit `percent`, and an explicitly fictional demo source; their source year is illustrative too. Coordinates are left null rather than invented.
+**Every population and water coverage value in the seed script is fictional DEMO data, not Census data or any official dataset.** The Census importer replaces only database population and provenance with official historical values. Requests and infrastructure metrics remain fictional. The requests are invented English, Kannada, and Hindi examples and each has a `[DEMO ONLY ...]` prefix. All metrics use `TAP_WATER_COVERAGE`, unit `percent`, and an explicitly fictional demo source; their source year is illustrative too. Coordinates are left null rather than invented.
 
 Run the seed serially, not concurrently. It uses a transaction, preserves existing districts, and inserts only missing demo requests and metrics, so sequential reruns do not duplicate these fixtures or delete other records. It does not overwrite existing populations or refresh existing demo values when fixture values change. Its printed totals describe the demo set ensured, not newly inserted rows or the entire database.
+
+## Census 2011 population import
+
+Dataset: **Census 2011 - Primary Census Abstract, India/State/District data**, published by the Office of the Registrar General & Census Commissioner, India. Source year: **2011**. The workbook's dictionary is titled “Census 2011 - Primary Census Abstract - Record Structure.”
+
+Download the original `2011-IndiaStateDist-0000.xlsx` manually from the [official Census download](https://censusindia.gov.in/nada/index.php/catalog/42557/download/46183/2011-IndiaStateDist-0000.xlsx), also available through the [Census catalog](https://censusindia.gov.in/nada/index.php/catalog/42557), and place it in `backend/data/raw/`. The importer reads this local file; it never scrapes or downloads web data. Do not edit the raw workbook.
+
+The supplied file is **1,381,659 bytes (1.32 MiB)**. Although modest, the national binary workbook is unnecessary to track for an eight-row extract. It is Git-ignored; source instructions/checksum are in `backend/data/raw/README.md`, and the small reproducible CSV is under `backend/data/processed/census2011-karnataka-population.csv` for version control.
+
+Inspection established the actual structure before implementation:
+
+- `Data`: 2,029 rows including the first-row header, 94 columns.
+- `Record Structure`: 96 rows, 4 columns; defines `TOT_P` (column K) as **Total Population (Persons)**.
+- `State` is a geographic code. The `STATE` / `KARNATAKA` / `Total` row establishes state code `29`.
+- Only `State=29`, `Level=DISTRICT`, `TRU=Total` rows qualify, with nonzero district code and zero codes in `Subdistt`, `Town/Village`, `Ward`, and `EB`.
+- Separate `Rural` and `Urban` rows are excluded. `Bangalore Rural` is a district name: its `Total` row is valid and must not be mistaken for the rural-only row.
+- The source contains India, state, and district levels; the importer also explicitly rejects lower geographic levels if present. No fuzzy name matching, summed rural/urban reconstruction, or population estimation is used.
+
+| Source district spelling | Application district | Census district code | 2011 population |
+| --- | --- | --- | ---: |
+| Bangalore | Bengaluru Urban | 572 | 9,621,551 |
+| Bangalore Rural | Bengaluru Rural | 583 | 990,923 |
+| Mysore | Mysuru | 577 | 3,001,127 |
+| Mandya | Mandya | 573 | 1,805,769 |
+| Tumkur | Tumakuru | 571 | 2,678,980 |
+| Hassan | Hassan | 574 | 1,776,421 |
+| Kolar | Kolar | 581 | 1,536,401 |
+| Ramanagara | Ramanagara | 584 | 1,082,636 |
+
+From `backend/`, after installing dependencies and creating the eight districts using the seed if needed:
+
+```powershell
+npx prisma migrate deploy
+npm run prisma:generate
+npm run import:census -- --dry-run
+# Review the eight matched populations above before the real import:
+npm run import:census
+```
+
+To choose another copy of this same workbook layout: `npm run import:census -- --dry-run --file "C:/path/to/2011-IndiaStateDist-0000.xlsx"`. Paths supplied with `--file` are relative to the current directory unless absolute. The default raw and processed paths resolve relative to the backend, regardless of the invoking directory.
+
+Dry-run validates the source, prints the eight-row pre-update summary, and writes the processed CSV, but **does not initialize Prisma, connect to MySQL, or write database records**. The real command prints the same summary before updates. Every run requires eight unique targets, rejects duplicate names/codes, requires the actual population column, and rejects missing, non-numeric, non-integer, non-positive, or out-of-Int-range populations. Numeric strings are rejected rather than guessed/coerced. Header order can change, but the inspected column names and dictionary must remain valid.
+
+Migration `20260921132824_add_population_provenance` adds nullable `populationSource` and `populationSourceYear`; unimported/demo rows remain null rather than falsely attributed. The importer requires the eight existing Karnataka districts and updates only `population`, `populationSource = "Census of India - Primary Census Abstract"`, and `populationSourceYear = 2011` in a single transaction. Prisma's normal `updatedAt` timestamp advances for changed districts. Other district fields, citizen requests, and infrastructure metrics are untouched. Reruns skip unchanged records, including their timestamps. No districts are created. The demo seed preserves existing districts and therefore does not overwrite imported populations on rerun.
+
+**Census 2011 population is historical demographic context, not a 2026 population estimate.** Name aliases align the application with the source labels; they do not perform a boundary harmonization or estimate later administrative changes. The existing water-priority algorithm is unchanged, but its per-capita rates and relative rankings naturally change when the population denominator changes. The remaining requests and water-coverage metrics are demo data, so scores are still prototype outputs, not official findings.
+
+Verification: the eight dry-run results matched an independent workbook inspection. The first real run updated 8 districts; the second updated 0. Full before/after comparisons confirmed that all request and metric records and unrelated district fields were preserved, with only the first update advancing district timestamps. The raw checksum was checked for preservation. Import validation, filtering, dry-run, successful update, idempotency, and existing analytics are covered by the backend tests.
 
 ## Read-only district endpoints
 
@@ -121,7 +170,7 @@ Successful district responses use `{ "success": true, "data": ... }`. Collection
 
 ## Water-priority analytics
 
-`GET /api/analytics/water-priority` returns every district in `{ success, data, methodology }`. This is a **prototype relative infrastructure-priority heuristic**, not an official government methodology or an AI prediction. The existing seed populations, requests, and coverage values remain fictional demo data. Scores are relative to the districts in this response, not absolute measures of need or comparable scores across changing comparison sets.
+`GET /api/analytics/water-priority` returns every district in `{ success, data, methodology }`. This is a **prototype relative infrastructure-priority heuristic**, not an official government methodology or an AI prediction. Seed fixtures are fictional; after Census import, population reflects 2011 while requests and coverage remain demo data. Scores are relative to the districts in this response, not absolute measures of need or comparable scores across changing comparison sets.
 
 The module follows routes -> controllers -> services -> Prisma. Weights, thresholds, and equal-demand behavior are configured in `backend/src/config/waterPriority.js`; the calculation is in `backend/src/services/waterPriority.service.js`.
 
@@ -147,7 +196,7 @@ Equal rates, including a single district or all-zero counts, produce demandIndex
 
 Missing coverage or a nonfinite/out-of-range value produces `INCOMPLETE`, with null coverage, gap, score, and level. The newest invalid coverage record is not silently replaced with an older value. Demand can still be calculated and participates in normalization. A nonpositive or invalid population produces null rate, demand index, score, and level; it is excluded from normalization, while valid coverage and gap remain available. Missing values are never invented. No districts returns an empty array. Database failures use the existing generic HTTP 500 response.
 
-Example from the unchanged demo database: Mandya has 1 water request and a fictional population of 65,000. Its rate is `1 / 65000 * 100000 = 1.5384615...`. Across all eight districts the minimum rate is `0.8333333...` and maximum is `1.8181818...`. Mandya's demand index is `(1.5384615... - 0.8333333...) / (1.8181818... - 0.8333333...) * 100 = 71.5976331...`. With fictional coverage of 49%, its gap is `51`, and score is `71.5976331... * 0.5 + 51 * 0.5 = 61.2988165...`, displayed as **61.30 (HIGH)**.
+Historical example from the original demo fixtures, before Census import (not the current database output): Mandya has 1 water request and a fictional population of 65,000. Its rate is `1 / 65000 * 100000 = 1.5384615...`. Across all eight districts the minimum rate is `0.8333333...` and maximum is `1.8181818...`. Mandya's demand index is `(1.5384615... - 0.8333333...) / (1.8181818... - 0.8333333...) * 100 = 71.5976331...`. With fictional coverage of 49%, its gap is `51`, and score is `71.5976331... * 0.5 + 51 * 0.5 = 61.2988165...`, displayed as **61.30 (HIGH)**.
 
 The backend suite includes scoring, rounding, threshold boundaries, equal demand, missing/invalid data, ordering, query filters, and safe database error handling. The analytics implementation was verified with all 38 backend tests, syntax checks across all 21 backend JavaScript files, and a live response against the unchanged MySQL demo data.
 

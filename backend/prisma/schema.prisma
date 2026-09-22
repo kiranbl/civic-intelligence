@@ -32,16 +32,18 @@ enum Urgency {
 }
 
 model District {
-  id             Int                    @id @default(autoincrement())
-  name           String
-  state          String
-  population     Int
-  latitude       Float?
-  longitude      Float?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  requests       CitizenRequest[]
-  infrastructure InfrastructureMetric[]
+  id                   Int                    @id @default(autoincrement())
+  name                 String
+  state                String
+  population           Int
+  populationSource     String?
+  populationSourceYear Int?
+  latitude             Float?
+  longitude            Float?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  requests             CitizenRequest[]
+  infrastructure       InfrastructureMetric[]
 
   @@unique([name, state])
 }
