@@ -15,23 +15,26 @@ export const demoDistricts = [
 export const demoSource = 'FICTIONAL DEMO ONLY - replace with verified data';
 export const demoYear = 2026;
 
+// Intentional synthetic rural-water scenario. These are not real submissions.
+// The Kannada road text explicitly describes a village. Other contexts are unknown.
+
 export function demoRequests(districtName) {
   return [
     {
       originalText: `[DEMO ONLY - ${districtName}] Our street needs a reliable tap water supply.`,
-      language: 'en', channel: 'TEXT', category: 'WATER', urgency: 'HIGH',
+      language: 'en', channel: 'TEXT', category: 'WATER', areaType: 'RURAL', urgency: 'HIGH',
     },
     {
       originalText: `[DEMO ONLY - ${districtName}] ನಮ್ಮ ಗ್ರಾಮದ ರಸ್ತೆಯ ಗುಂಡಿಗಳನ್ನು ದಯವಿಟ್ಟು ಸರಿಪಡಿಸಿ.`,
-      language: 'kn', channel: 'MESSAGING', category: 'ROADS', urgency: 'MEDIUM',
+      language: 'kn', channel: 'MESSAGING', category: 'ROADS', areaType: 'RURAL', urgency: 'MEDIUM',
     },
     {
       originalText: `[DEMO ONLY - ${districtName}] हमारे इलाके में नियमित कचरा संग्रह की व्यवस्था चाहिए।`,
-      language: 'hi', channel: 'VOICE', category: 'SANITATION', urgency: 'MEDIUM',
+      language: 'hi', channel: 'VOICE', category: 'SANITATION', areaType: 'UNKNOWN', urgency: 'MEDIUM',
     },
     {
       originalText: `[DEMO ONLY - ${districtName}] Please add an evening bus service to the nearby clinic.`,
-      language: 'en', channel: 'TEXT', category: 'TRANSPORT', urgency: 'LOW',
+      language: 'en', channel: 'TEXT', category: 'TRANSPORT', areaType: 'UNKNOWN', urgency: 'LOW',
     },
   ];
 }

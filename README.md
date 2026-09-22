@@ -105,7 +105,7 @@ The initial migration is `20260921123312_initial_database_layer`. A district's n
 
 The seed creates eight Karnataka districts: Bengaluru Urban, Bengaluru Rural, Mysuru, Mandya, Tumakuru, Hassan, Kolar, and Ramanagara. A fresh database receives **8 districts, 32 citizen requests (4 per district), and 8 infrastructure metrics (1 per district)**.
 
-**Every population and water coverage value in the seed script is fictional DEMO data, not Census data or any official dataset.** The Census importer replaces only database population and provenance with official historical values. Requests and infrastructure metrics remain fictional. The requests are invented English, Kannada, and Hindi examples and each has a `[DEMO ONLY ...]` prefix. All metrics use `TAP_WATER_COVERAGE`, unit `percent`, and an explicitly fictional demo source; their source year is illustrative too. Coordinates are left null rather than invented.
+**Every population and water coverage value in the seed script is fictional DEMO data, not Census data or any official dataset.** The Census importer replaces only database total/rural/urban population and their shared provenance with official historical values. Requests and infrastructure metrics remain fictional. The requests are invented English, Kannada, and Hindi examples and each has a `[DEMO ONLY ...]` prefix. All metrics use `RURAL_FHTC_COVERAGE`, unit `percent`, and an explicitly fictional demo source; their source year is illustrative too. Coordinates are left null rather than invented.
 
 Run the seed serially, not concurrently. It uses a transaction, preserves existing districts, and inserts only missing demo requests and metrics, so sequential reruns do not duplicate these fixtures or delete other records. It does not overwrite existing populations or refresh existing demo values when fixture values change. Its printed totals describe the demo set ensured, not newly inserted rows or the entire database.
 
@@ -122,20 +122,20 @@ Inspection established the actual structure before implementation:
 - `Data`: 2,029 rows including the first-row header, 94 columns.
 - `Record Structure`: 96 rows, 4 columns; defines `TOT_P` (column K) as **Total Population (Persons)**.
 - `State` is a geographic code. The `STATE` / `KARNATAKA` / `Total` row establishes state code `29`.
-- Only `State=29`, `Level=DISTRICT`, `TRU=Total` rows qualify, with nonzero district code and zero codes in `Subdistt`, `Town/Village`, `Ward`, and `EB`.
-- Separate `Rural` and `Urban` rows are excluded. `Bangalore Rural` is a district name: its `Total` row is valid and must not be mistaken for the rural-only row.
+- Only `State=29`, `Level=DISTRICT`, and `TRU=Total`, `Rural`, or `Urban` rows qualify, with nonzero district code and zero codes in `Subdistt`, `Town/Village`, `Ward`, and `EB`.
+- Each district must have exactly one row for each of `Total`, `Rural`, and `Urban`; duplicate district/TRU pairs or inconsistent district codes are rejected. `Bangalore Rural` is a district name, not a TRU classification.
 - The source contains India, state, and district levels; the importer also explicitly rejects lower geographic levels if present. No fuzzy name matching, summed rural/urban reconstruction, or population estimation is used.
 
-| Source district spelling | Application district | Census district code | 2011 population |
-| --- | --- | --- | ---: |
-| Bangalore | Bengaluru Urban | 572 | 9,621,551 |
-| Bangalore Rural | Bengaluru Rural | 583 | 990,923 |
-| Mysore | Mysuru | 577 | 3,001,127 |
-| Mandya | Mandya | 573 | 1,805,769 |
-| Tumkur | Tumakuru | 571 | 2,678,980 |
-| Hassan | Hassan | 574 | 1,776,421 |
-| Kolar | Kolar | 581 | 1,536,401 |
-| Ramanagara | Ramanagara | 584 | 1,082,636 |
+| Source district spelling | Application district | Code | 2011 Total | 2011 Rural | 2011 Urban |
+| --- | --- | --- | ---: | ---: | ---: |
+| Bangalore | Bengaluru Urban | 572 | 9,621,551 | 871,607 | 8,749,944 |
+| Bangalore Rural | Bengaluru Rural | 583 | 990,923 | 722,179 | 268,744 |
+| Mysore | Mysuru | 577 | 3,001,127 | 1,755,714 | 1,245,413 |
+| Mandya | Mandya | 573 | 1,805,769 | 1,497,407 | 308,362 |
+| Tumkur | Tumakuru | 571 | 2,678,980 | 2,079,902 | 599,078 |
+| Hassan | Hassan | 574 | 1,776,421 | 1,399,658 | 376,763 |
+| Kolar | Kolar | 581 | 1,536,401 | 1,056,328 | 480,073 |
+| Ramanagara | Ramanagara | 584 | 1,082,636 | 814,877 | 267,759 |
 
 From `backend/`, after installing dependencies and creating the eight districts using the seed if needed:
 
@@ -145,15 +145,16 @@ npm run prisma:generate
 npm run import:census -- --dry-run
 # Review the eight matched populations above before the real import:
 npm run import:census
+npm run prisma:seed
 ```
 
 To choose another copy of this same workbook layout: `npm run import:census -- --dry-run --file "C:/path/to/2011-IndiaStateDist-0000.xlsx"`. Paths supplied with `--file` are relative to the current directory unless absolute. The default raw and processed paths resolve relative to the backend, regardless of the invoking directory.
 
-Dry-run validates the source, prints the eight-row pre-update summary, and writes the processed CSV, but **does not initialize Prisma, connect to MySQL, or write database records**. The real command prints the same summary before updates. Every run requires eight unique targets, rejects duplicate names/codes, requires the actual population column, and rejects missing, non-numeric, non-integer, non-positive, or out-of-Int-range populations. Numeric strings are rejected rather than guessed/coerced. Header order can change, but the inspected column names and dictionary must remain valid.
+Dry-run validates the source, prints the eight-row pre-update summary, and writes the processed CSV, but **does not initialize Prisma, connect to MySQL, or write database records**. The real command prints the same summary before updates. Every run requires eight unique targets, rejects duplicate district/TRU matches, requires the actual population column, and rejects missing, non-numeric, non-integer, negative, or out-of-Int-range populations. Total must be positive; Rural and Urban may legitimately be zero. Every district must satisfy Rural + Urban = Total exactly; otherwise the import stops without adjusting values. Numeric strings are rejected rather than guessed/coerced. Header order can change, but the inspected column names and dictionary must remain valid.
 
-Migration `20260921132824_add_population_provenance` adds nullable `populationSource` and `populationSourceYear`; unimported/demo rows remain null rather than falsely attributed. The importer requires the eight existing Karnataka districts and updates only `population`, `populationSource = "Census of India - Primary Census Abstract"`, and `populationSourceYear = 2011` in a single transaction. Prisma's normal `updatedAt` timestamp advances for changed districts. Other district fields, citizen requests, and infrastructure metrics are untouched. Reruns skip unchanged records, including their timestamps. No districts are created. The demo seed preserves existing districts and therefore does not overwrite imported populations on rerun.
+Migration `20260921132824_add_population_provenance` adds nullable `populationSource` and `populationSourceYear`; unimported/demo rows remain null rather than falsely attributed. The importer requires the eight existing Karnataka districts and updates only `population` (Total), `ruralPopulation`, `urbanPopulation`, `populationSource = "Census of India - Primary Census Abstract"`, and `populationSourceYear = 2011` in a single transaction. Prisma's normal `updatedAt` timestamp advances for changed districts. Other district fields, citizen requests, and infrastructure metrics are untouched. Reruns skip unchanged records, including their timestamps. No districts are created. The demo seed preserves existing districts and therefore does not overwrite imported populations on rerun.
 
-**Census 2011 population is historical demographic context, not a 2026 population estimate.** Name aliases align the application with the source labels; they do not perform a boundary harmonization or estimate later administrative changes. The existing water-priority algorithm is unchanged, but its per-capita rates and relative rankings naturally change when the population denominator changes. The remaining requests and water-coverage metrics are demo data, so scores are still prototype outputs, not official findings.
+**Census 2011 population is historical demographic context, not a 2026 population estimate.** Name aliases align the application with the source labels; they do not perform a boundary harmonization or estimate later administrative changes. Water priority now uses rural population and rural WATER requests. The min-max normalization, 50/50 weights, thresholds, rounding and incomplete-data rules remain unchanged; rankings change with the rural inputs. The remaining requests and water-coverage metrics are demo data, so scores are still prototype outputs, not official findings.
 
 Verification: the eight dry-run results matched an independent workbook inspection. The first real run updated 8 districts; the second updated 0. Full before/after comparisons confirmed that all request and metric records and unrelated district fields were preserved, with only the first update advancing district timestamps. The raw checksum was checked for preservation. Import validation, filtering, dry-run, successful update, idempotency, and existing analytics are covered by the backend tests.
 
@@ -168,7 +169,15 @@ Verification: the eight dry-run results matched an independent workbook inspecti
 
 Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. No write endpoints or frontend data pages are implemented.
 
-## Water-priority analytics
+## Rural water-priority analytics
+
+`methodology.scope` is **Rural water infrastructure prototype**. JJM FHTC coverage is rural household tap-water coverage, so demand is restricted to explicitly rural requests and normalized using rural population. Coverage is a household percentage, while demand is a request rate per rural person; the heuristic combines their indices and does not treat households and persons as interchangeable. **No JJM data has been imported. Current FHTC values are fictional until a JJM importer is added.** Census 2011 remains historical context, not current population.
+
+Migration `20260922091719_rural_water_scope` adds nullable district rural/urban populations and `CitizenRequest.areaType` (`RURAL`, `URBAN`, `UNKNOWN`, default `UNKNOWN`). Existing unclassified requests stay UNKNOWN until explicitly classified. Shared population source/year applies to all three counts. The processed CSV contains `applicationDistrictName,sourceDistrictName,censusDistrictCode,totalPopulation,ruralPopulation,urbanPopulation,populationSource,populationSourceYear`.
+
+The seed intentionally marks the existing fictional WATER requests RURAL and the Kannada village-road examples RURAL. Ambiguous sanitation and transport examples remain UNKNOWN. It updates areaType only on exact demo text/category/language/channel matches. Legacy coverage metrics with the exact demo source/year/district are renamed to `RURAL_FHTC_COVERAGE` without changing their values; non-demo metrics are untouched. Ambiguous legacy/current demo duplicates abort the transaction. The seed does not invent rural population values: run the Census importer before expecting complete analytics on a fresh database.
+
+Response fields use explicit rural names: `ruralPopulation`, `ruralWaterRequestCount`, `ruralWaterRequestsPer100k`, and `ruralFhtcCoverage`, alongside district identity, demand index, gap, score, level, and completeness. Old generic response fields have been replaced. A zero or missing rural population makes the record incomplete; total population is never used as a fallback.
 
 `GET /api/analytics/water-priority` returns every district in `{ success, data, methodology }`. This is a **prototype relative infrastructure-priority heuristic**, not an official government methodology or an AI prediction. Seed fixtures are fictional; after Census import, population reflects 2011 while requests and coverage remain demo data. Scores are relative to the districts in this response, not absolute measures of need or comparable scores across changing comparison sets.
 
@@ -176,11 +185,11 @@ The module follows routes -> controllers -> services -> Prisma. Weights, thresho
 
 For each district:
 
-1. Count all stored requests with category `WATER`, without a date filter.
-2. Calculate `waterRequestsPer100k = waterRequestCount / population * 100000`.
+1. Count only stored requests with category `WATER` AND `areaType=RURAL`, without a date filter. URBAN and UNKNOWN water requests are excluded.
+2. Calculate `ruralWaterRequestsPer100k = ruralWaterRequestCount / ruralPopulation * 100000`.
 3. Normalize those rates using `(rate - minimumRate) / (maximumRate - minimumRate) * 100`.
-4. Select `TAP_WATER_COVERAGE` by descending `sourceYear`, then `createdAt`, then `id`. Values are interpreted as percentages on a 0–100 scale; no unit conversion is performed.
-5. Calculate `infrastructureGap = 100 - tapWaterCoverage`.
+4. Select `RURAL_FHTC_COVERAGE` by descending `sourceYear`, then `createdAt`, then `id`. Values are interpreted as percentages on a 0–100 scale; no unit conversion is performed.
+5. Calculate `infrastructureGap = 100 - ruralFhtcCoverage`.
 6. Calculate `priorityScore = demandIndex * 0.5 + infrastructureGap * 0.5`.
 
 | Displayed score | Demo priority level |
@@ -194,11 +203,11 @@ Intermediate calculations retain full precision. Display values are rounded to t
 
 Equal rates, including a single district or all-zero counts, produce demandIndex `0`: there is no relative demand distinction, so only the infrastructure-gap component contributes. This does not imply an absence of citizen need.
 
-Missing coverage or a nonfinite/out-of-range value produces `INCOMPLETE`, with null coverage, gap, score, and level. The newest invalid coverage record is not silently replaced with an older value. Demand can still be calculated and participates in normalization. A nonpositive or invalid population produces null rate, demand index, score, and level; it is excluded from normalization, while valid coverage and gap remain available. Missing values are never invented. No districts returns an empty array. Database failures use the existing generic HTTP 500 response.
+Missing coverage or a nonfinite/out-of-range value produces `INCOMPLETE`, with null coverage, gap, score, and level. The newest invalid coverage record is not silently replaced with an older value. Demand can still be calculated and participates in normalization. A missing, nonpositive or invalid rural population produces null rate, demand index, score, and level; it is excluded from normalization, while valid coverage and gap remain available. Missing values are never invented. No districts returns an empty array. Database failures use the existing generic HTTP 500 response.
 
-Historical example from the original demo fixtures, before Census import (not the current database output): Mandya has 1 water request and a fictional population of 65,000. Its rate is `1 / 65000 * 100000 = 1.5384615...`. Across all eight districts the minimum rate is `0.8333333...` and maximum is `1.8181818...`. Mandya's demand index is `(1.5384615... - 0.8333333...) / (1.8181818... - 0.8333333...) * 100 = 71.5976331...`. With fictional coverage of 49%, its gap is `51`, and score is `71.5976331... * 0.5 + 51 * 0.5 = 61.2988165...`, displayed as **61.30 (HIGH)**.
+Example using historical Census rural population and fictional requests/coverage: Mandya has 1 rural water request and 1,497,407 rural persons. Its rate is `100000 / 1497407 = 0.0667821107...`. Minimum rate (Tumakuru) is `0.0480791883...`; maximum (Bengaluru Rural) is `0.1384698253...`. Demand index is `(0.0667821107... - 0.0480791883...) / (0.1384698253... - 0.0480791883...) * 100 = 20.6912164...`. With fictional rural FHTC coverage of 49%, the gap is `51`, and score is `20.6912164... * 0.5 + 51 * 0.5 = 35.8456082...`, displayed as **35.85 (MEDIUM)**.
 
-The backend suite includes scoring, rounding, threshold boundaries, equal demand, missing/invalid data, ordering, query filters, and safe database error handling. The analytics implementation was verified with all 38 backend tests, syntax checks across all 21 backend JavaScript files, and a live response against the unchanged MySQL demo data.
+The backend suite includes scoring, rounding, threshold boundaries, equal demand, missing/invalid data, ordering, query filters, and safe database error handling. Tests also cover the rural population denominator, exclusion of URBAN/UNKNOWN requests, and Total/Rural/Urban Census reconciliation. Import and seed reruns were verified against local MySQL without further changes.
 
 ## Run locally
 

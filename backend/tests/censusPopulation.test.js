@@ -12,7 +12,11 @@ function row(name, code, population = 12345) {
 }
 function fixture() {
   return [header, ['29', '000', '00000', '000000', '0000', '000000', 'STATE', 'KARNATAKA', 'Total', 61095297],
-    ...sourceNames.map((name, index) => row(name, String(571 + index)))];
+    ...sourceNames.map((name, index) => row(name, String(571 + index))),
+    ...sourceNames.flatMap((name, index) => [
+      change(row(name, String(571 + index), 8000), 'TRU', 'Rural'),
+      change(row(name, String(571 + index), 4345), 'TRU', 'Urban'),
+    ])];
 }
 function change(record, column, value) {
   const copy = [...record];
@@ -30,10 +34,10 @@ test('explicit historical aliases select exactly eight unique application distri
   assert.ok(records.every(record => record.populationSource === POPULATION_SOURCE && record.populationSourceYear === 2011));
 });
 
-test('filters rural/urban, other states, state totals, and every lower geographic level', () => {
+test('filters other states, state totals, and every lower geographic level', () => {
   const rows = fixture();
   const target = rows[2];
-  for (const tru of ['Rural', 'Urban']) rows.push(change(target, 'TRU', tru));
+  rows.push(change(target, 'TRU', 'Other'));
   for (const level of ['STATE', 'SUB-DISTRICT', 'TOWN', 'VILLAGE', 'WARD', 'India']) rows.push(change(target, 'Level', level));
   rows.push(change(target, 'State', '28'));
   for (const column of ['Subdistt', 'Town/Village', 'Ward', 'EB']) rows.push(change(target, column, '00001'));
@@ -65,10 +69,10 @@ test('duplicate district names and duplicate district codes are rejected', () =>
 });
 
 test('a missing district is rejected, including when only a rural row remains', () => {
-  const rows = fixture(); rows.pop();
+  const rows = fixture().filter(record => record[7] !== 'Ramanagara');
   assert.throws(() => extractCensusPopulations(rows), /Missing: Ramanagara/);
-  const ruralOnly = fixture(); ruralOnly[2] = change(ruralOnly[2], 'TRU', 'Rural');
-  assert.throws(() => extractCensusPopulations(ruralOnly), /Missing: Bengaluru Urban/);
+  const ruralOnly = fixture(); ruralOnly.splice(2, 1);
+  assert.throws(() => extractCensusPopulations(ruralOnly), /Missing Total population for Bangalore/);
 });
 
 test('invalid, blank, fractional, or oversized population values are rejected', () => {
@@ -111,7 +115,7 @@ function fakeDatabase() {
           return districts;
         },
         update: async ({ where, data }) => {
-          assert.deepEqual(Object.keys(data).sort(), ['population', 'populationSource', 'populationSourceYear']);
+          assert.deepEqual(Object.keys(data).sort(), ['population', 'populationSource', 'populationSourceYear', 'ruralPopulation', 'urbanPopulation']);
           writes.push({ where, data });
           Object.assign(districts.find(district => district.id === where.id), data);
         },
@@ -142,8 +146,46 @@ test('missing database target fails before the first update', async () => {
   assert.equal(state.writes.length, 0);
 });
 
-test('processed CSV has exactly the six requested columns and eight data records', () => {
+test('processed CSV has exactly the eight requested columns and eight data records', () => {
   const lines = populationCsv(extractCensusPopulations(fixture())).trim().split('\n');
   assert.equal(lines.length, 9);
-  assert.equal(lines[0], 'applicationDistrictName,sourceDistrictName,censusDistrictCode,population,populationSource,populationSourceYear');
+  assert.equal(lines[0], 'applicationDistrictName,sourceDistrictName,censusDistrictCode,totalPopulation,ruralPopulation,urbanPopulation,populationSource,populationSourceYear');
+});
+
+test('extracts separate Total, Rural and Urban values and verifies exact reconciliation', () => {
+  const [record] = extractCensusPopulations(fixture());
+  assert.equal(record.totalPopulation, 12345);
+  assert.equal(record.ruralPopulation, 8000);
+  assert.equal(record.urbanPopulation, 4345);
+  const rows = fixture(); rows[10] = change(rows[10], 'TOT_P', 8001);
+  assert.throws(() => extractCensusPopulations(rows), /reconciliation failed/);
+});
+
+test('rejects missing and duplicate Rural or Urban rows', () => {
+  for (const tru of ['Rural', 'Urban']) {
+    const rows = fixture();
+    const index = rows.findIndex(record => record[7] === 'Bangalore' && record[8] === tru);
+    const duplicate = [...rows, rows[index]];
+    assert.throws(() => extractCensusPopulations(duplicate), /Duplicate district/);
+    rows.splice(index, 1);
+    assert.throws(() => extractCensusPopulations(rows), new RegExp(`Missing ${tru}`));
+  }
+});
+
+test('validates each component while allowing a genuine zero population component', () => {
+  for (const tru of ['Rural', 'Urban']) {
+    for (const invalid of [null, '', '8000', NaN, Infinity, -1, 1.5]) {
+      const rows = fixture();
+      const index = rows.findIndex(record => record[7] === 'Bangalore' && record[8] === tru);
+      rows[index] = change(rows[index], 'TOT_P', invalid);
+      assert.throws(() => extractCensusPopulations(rows), /Invalid TOT_P/);
+    }
+  }
+  const rows = fixture(); rows[10] = change(rows[10], 'TOT_P', 0); rows[11] = change(rows[11], 'TOT_P', 12345);
+  assert.equal(extractCensusPopulations(rows)[0].ruralPopulation, 0);
+});
+
+test('inconsistent geographic codes across the three rows are rejected', () => {
+  const rows = fixture(); rows[10] = change(rows[10], 'District', '999');
+  assert.throws(() => extractCensusPopulations(rows), /Inconsistent district code/);
 });

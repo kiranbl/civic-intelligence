@@ -13,6 +13,12 @@ enum Channel {
   MESSAGING
 }
 
+enum AreaType {
+  RURAL
+  URBAN
+  UNKNOWN
+}
+
 enum Category {
   WATER
   ROADS
@@ -36,6 +42,8 @@ model District {
   name                 String
   state                String
   population           Int
+  ruralPopulation      Int?
+  urbanPopulation      Int?
   populationSource     String?
   populationSourceYear Int?
   latitude             Float?
@@ -55,6 +63,7 @@ model CitizenRequest {
   language     String
   channel      Channel
   category     Category
+  areaType     AreaType @default(UNKNOWN)
   subcategory  String?
   urgency      Urgency?
   latitude     Float?

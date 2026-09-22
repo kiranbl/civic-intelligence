@@ -1,7 +1,7 @@
 import prisma from '../config/prisma.js';
 import {
   WATER_PRIORITY_WEIGHTS, WATER_PRIORITY_LEVELS, EQUAL_DEMAND_INDEX,
-  TAP_WATER_METRIC_TYPE, WATER_PRIORITY_METHODOLOGY,
+  RURAL_FHTC_METRIC_TYPE, WATER_PRIORITY_METHODOLOGY,
 } from '../config/waterPriority.js';
 
 function roundForDisplay(value) {
@@ -16,8 +16,8 @@ export function getWaterPriorityLevel(score) {
 // Pure calculation kept separate from data loading for focused business tests.
 export function calculateWaterPriority(districts) {
   const inputs = districts.map((district) => {
-    const populationIsValid = Number.isInteger(district.population) && district.population > 0;
-    const rate = populationIsValid ? (district._count.requests / district.population) * 100000 : null;
+    const populationIsValid = Number.isInteger(district.ruralPopulation) && district.ruralPopulation > 0;
+    const rate = populationIsValid ? (district._count.requests / district.ruralPopulation) * 100000 : null;
     const coverage = district.infrastructure[0]?.value;
     const coverageIsValid = Number.isFinite(coverage) && coverage >= 0 && coverage <= 100;
     return { district, rate, coverage: coverageIsValid ? coverage : null };
@@ -51,10 +51,10 @@ export function calculateWaterPriority(districts) {
       districtId: district.id,
       districtName: district.name,
       state: district.state,
-      population: district.population,
-      waterRequestCount: district._count.requests,
-      waterRequestsPer100k: roundForDisplay(rate),
-      tapWaterCoverage: roundForDisplay(coverage),
+      ruralPopulation: district.ruralPopulation ?? null,
+      ruralWaterRequestCount: district._count.requests,
+      ruralWaterRequestsPer100k: roundForDisplay(rate),
+      ruralFhtcCoverage: roundForDisplay(coverage),
       demandIndex: roundForDisplay(demandIndex),
       infrastructureGap: roundForDisplay(infrastructureGap),
       priorityScore,
@@ -79,10 +79,10 @@ export async function getWaterPriority() {
       id: true,
       name: true,
       state: true,
-      population: true,
-      _count: { select: { requests: { where: { category: 'WATER' } } } },
+      ruralPopulation: true,
+      _count: { select: { requests: { where: { category: 'WATER', areaType: 'RURAL' } } } },
       infrastructure: {
-        where: { metricType: TAP_WATER_METRIC_TYPE },
+        where: { metricType: RURAL_FHTC_METRIC_TYPE },
         orderBy: [{ sourceYear: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         take: 1,
         select: { value: true },

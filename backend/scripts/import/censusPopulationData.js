@@ -18,6 +18,8 @@ const REQUIRED_COLUMNS = ['State', 'District', 'Subdistt', 'Town/Village', 'Ward
 const lowerLevelColumns = ['Subdistt', 'Town/Village', 'Ward', 'EB'];
 const text = value => String(value ?? '').trim();
 const isZeroCode = value => /^0+$/.test(text(value));
+const POPULATION_FIELDS = { Total: 'totalPopulation', Rural: 'ruralPopulation', Urban: 'urbanPopulation' };
+const validCount = (value, minimum = 0) => Number.isSafeInteger(value) && value >= minimum && value <= 2147483647;
 
 export function extractCensusPopulations(rows) {
   const [header, ...data] = rows;
@@ -36,9 +38,10 @@ export function extractCensusPopulations(rows) {
   }
 
   const matched = new Map();
-  const codes = new Set();
+  const codes = new Map();
   for (const row of records) {
-    if (text(row.State) !== '29' || text(row.Level) !== 'DISTRICT' || text(row.TRU) !== 'Total') continue;
+    const tru = text(row.TRU);
+    if (text(row.State) !== '29' || text(row.Level) !== 'DISTRICT' || !Object.hasOwn(POPULATION_FIELDS, tru)) continue;
     if (!lowerLevelColumns.every(column => isZeroCode(row[column]))) continue;
     const sourceDistrictName = text(row.Name);
     if (!Object.hasOwn(DISTRICT_ALIASES, sourceDistrictName)) continue;
@@ -47,22 +50,36 @@ export function extractCensusPopulations(rows) {
     if (!/^\d{3}$/.test(censusDistrictCode) || isZeroCode(censusDistrictCode)) {
       throw new Error(`Invalid district code for ${sourceDistrictName}.`);
     }
-    if (matched.has(applicationDistrictName) || codes.has(censusDistrictCode)) {
+    const existing = matched.get(applicationDistrictName);
+    const field = POPULATION_FIELDS[tru];
+    if ((existing && Object.hasOwn(existing, field))
+      || (codes.has(censusDistrictCode) && codes.get(censusDistrictCode) !== applicationDistrictName)) {
       throw new Error(`Duplicate district match: ${sourceDistrictName}.`);
     }
+    if (existing && existing.censusDistrictCode !== censusDistrictCode) throw new Error(`Inconsistent district code for ${sourceDistrictName}.`);
     // Do not coerce blanks, numeric strings, booleans, or fractional counts.
-    if (!Number.isSafeInteger(row.TOT_P) || row.TOT_P <= 0 || row.TOT_P > 2147483647) {
-      throw new Error(`Invalid TOT_P population for ${sourceDistrictName}.`);
+    if (!validCount(row.TOT_P, tru === 'Total' ? 1 : 0)) {
+      throw new Error(`Invalid TOT_P ${tru} population for ${sourceDistrictName}.`);
     }
-    codes.add(censusDistrictCode);
+    codes.set(censusDistrictCode, applicationDistrictName);
     matched.set(applicationDistrictName, {
       applicationDistrictName, sourceDistrictName, censusDistrictCode,
-      population: row.TOT_P, populationSource: POPULATION_SOURCE, populationSourceYear: POPULATION_YEAR,
+      ...existing,
+      [field]: row.TOT_P, populationSource: POPULATION_SOURCE, populationSourceYear: POPULATION_YEAR,
     });
   }
   const missing = Object.values(DISTRICT_ALIASES).filter(name => !matched.has(name));
   if (matched.size !== 8 || missing.length) throw new Error(`Expected eight unique districts. Missing: ${missing.join(', ')}`);
-  return Object.values(DISTRICT_ALIASES).map(name => matched.get(name));
+  const result = Object.values(DISTRICT_ALIASES).map(name => matched.get(name));
+  for (const record of result) {
+    for (const [tru, field] of Object.entries(POPULATION_FIELDS)) {
+      if (!Object.hasOwn(record, field)) throw new Error(`Missing ${tru} population for ${record.sourceDistrictName}.`);
+    }
+    if (record.ruralPopulation + record.urbanPopulation !== record.totalPopulation) {
+      throw new Error(`Population reconciliation failed for ${record.sourceDistrictName}: Rural + Urban must equal Total. Stop and investigate the source; no adjustment is permitted.`);
+    }
+  }
+  return result;
 }
 
 export async function readCensusPopulations(file) {
@@ -78,7 +95,7 @@ export async function readCensusPopulations(file) {
 }
 
 export function populationCsv(records) {
-  const columns = ['applicationDistrictName', 'sourceDistrictName', 'censusDistrictCode', 'population', 'populationSource', 'populationSourceYear'];
+  const columns = ['applicationDistrictName', 'sourceDistrictName', 'censusDistrictCode', 'totalPopulation', 'ruralPopulation', 'urbanPopulation', 'populationSource', 'populationSourceYear'];
   const escape = value => `"${String(value).replaceAll('"', '""')}"`;
   return `${columns.join(',')}\n${records.map(row => columns.map(column => escape(row[column])).join(',')).join('\n')}\n`;
 }
@@ -86,12 +103,13 @@ export function populationCsv(records) {
 export async function importPopulations(records, { dryRun = true, getClient, log = console.log } = {}) {
   if (records.length !== 8 || new Set(records.map(row => row.applicationDistrictName)).size !== 8
     || records.some(row => !Object.values(DISTRICT_ALIASES).includes(row.applicationDistrictName)
-      || !Number.isSafeInteger(row.population) || row.population <= 0 || row.population > 2147483647
+      || !validCount(row.totalPopulation, 1) || !validCount(row.ruralPopulation) || !validCount(row.urbanPopulation)
+      || row.ruralPopulation + row.urbanPopulation !== row.totalPopulation
       || row.populationSource !== POPULATION_SOURCE || row.populationSourceYear !== POPULATION_YEAR)) {
     throw new Error('Import requires eight validated target district populations with Census 2011 provenance.');
   }
   log('Pre-update summary: Census 2011 historical population, not a 2026 estimate.');
-  for (const row of records) log(`${row.sourceDistrictName} -> ${row.applicationDistrictName}: ${row.population} (district ${row.censusDistrictCode})`);
+  for (const row of records) log(`${row.sourceDistrictName} -> ${row.applicationDistrictName}: Total=${row.totalPopulation}, Rural=${row.ruralPopulation}, Urban=${row.urbanPopulation} (district ${row.censusDistrictCode})`);
   if (dryRun) {
     log('Dry run: no database connection or writes.');
     return { matched: 8, updated: 0, dryRun: true };
@@ -108,7 +126,7 @@ export async function importPopulations(records, { dryRun = true, getClient, log
     let updated = 0;
     for (const record of records) {
       const district = districts.find(row => row.name === record.applicationDistrictName);
-      const data = { population: record.population, populationSource: record.populationSource, populationSourceYear: record.populationSourceYear };
+      const data = { population: record.totalPopulation, ruralPopulation: record.ruralPopulation, urbanPopulation: record.urbanPopulation, populationSource: record.populationSource, populationSourceYear: record.populationSourceYear };
       if (Object.entries(data).every(([key, value]) => district[key] === value)) continue;
       await tx.district.update({ where: { id: district.id }, data });
       updated++;

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { calculateWaterPriority, getWaterPriorityLevel } from '../src/services/waterPriority.service.js';
 
-function district(id, population, count, coverage) {
+function district(id, ruralPopulation, count, coverage) {
   return {
-    id, name: `District ${id}`, state: 'Karnataka', population,
+    id, name: `District ${id}`, state: 'Karnataka', ruralPopulation,
     _count: { requests: count },
     infrastructure: coverage === undefined ? [] : [{ value: coverage }],
   };
@@ -17,8 +17,8 @@ test('water rates, normalization, gaps, scores, and descending ordering', () => 
     district(3, 50000, 15, 20),
   ]);
   assert.deepEqual(result.map(row => row.districtId), [3, 2, 1]);
-  assert.deepEqual(result.map(row => row.waterRequestCount), [15, 40, 10]);
-  assert.deepEqual(result.map(row => row.waterRequestsPer100k), [30, 20, 10]);
+  assert.deepEqual(result.map(row => row.ruralWaterRequestCount), [15, 40, 10]);
+  assert.deepEqual(result.map(row => row.ruralWaterRequestsPer100k), [30, 20, 10]);
   assert.deepEqual(result.map(row => row.demandIndex), [100, 50, 0]);
   assert.deepEqual(result.map(row => row.infrastructureGap), [80, 40, 20]);
   assert.deepEqual(result.map(row => row.priorityScore), [90, 45, 10]);
@@ -33,8 +33,8 @@ test('display rounding occurs after normalization and score calculation', () => 
     district(3, 100000, 1, 100),
   ]);
   const row = result.find(item => item.districtId === 1);
-  assert.equal(row.waterRequestsPer100k, 0.33);
-  assert.equal(row.tapWaterCoverage, 33.33);
+  assert.equal(row.ruralWaterRequestsPer100k, 0.33);
+  assert.equal(row.ruralFhtcCoverage, 33.33);
   assert.equal(row.demandIndex, 33.33);
   assert.equal(row.infrastructureGap, 66.67);
   assert.equal(row.priorityScore, 50);
@@ -65,9 +65,9 @@ test('missing coverage remains incomplete but its demand participates in normali
   assert.equal(result[0].demandIndex, 50);
   const missing = result[2];
   assert.equal(missing.dataCompleteness, 'INCOMPLETE');
-  assert.equal(missing.waterRequestsPer100k, 30);
+  assert.equal(missing.ruralWaterRequestsPer100k, 30);
   assert.equal(missing.demandIndex, 100);
-  for (const field of ['tapWaterCoverage', 'infrastructureGap', 'priorityScore', 'priorityLevel']) {
+  for (const field of ['ruralFhtcCoverage', 'infrastructureGap', 'priorityScore', 'priorityLevel']) {
     assert.equal(missing[field], null);
   }
 });
@@ -78,7 +78,7 @@ test('invalid coverage is not clamped, scored, or replaced by an older valid val
     input.infrastructure.push({ value: 50 });
     const [row] = calculateWaterPriority([input]);
     assert.equal(row.dataCompleteness, 'INCOMPLETE');
-    assert.equal(row.tapWaterCoverage, null);
+    assert.equal(row.ruralFhtcCoverage, null);
     assert.equal(row.infrastructureGap, null);
     assert.equal(row.priorityScore, null);
     assert.equal(row.priorityLevel, null);
@@ -104,19 +104,27 @@ test('zero demand and a single district use zero demandIndex', () => {
   ]) assert.ok(calculateWaterPriority(inputs).every(row => row.demandIndex === 0));
 });
 
-test('invalid population yields null demand and is excluded from normalization', () => {
-  for (const population of [0, -1, null, NaN, Infinity, 1.5]) {
-    const result = calculateWaterPriority([district(1, population, 20, 50), district(2, 100000, 10, 80)]);
+test('invalid ruralPopulation yields null demand and is excluded from normalization', () => {
+  for (const ruralPopulation of [undefined, 0, -1, null, NaN, Infinity, 1.5]) {
+    const result = calculateWaterPriority([district(1, ruralPopulation, 20, 50), district(2, 100000, 10, 80)]);
     assert.equal(result[0].districtId, 2);
     assert.equal(result[0].demandIndex, 0);
     const row = result[1];
     assert.equal(row.dataCompleteness, 'INCOMPLETE');
-    assert.equal(row.waterRequestsPer100k, null);
+    assert.equal(row.ruralWaterRequestsPer100k, null);
     assert.equal(row.demandIndex, null);
     assert.equal(row.priorityScore, null);
     assert.equal(row.priorityLevel, null);
     assert.equal(row.infrastructureGap, 50);
   }
+});
+
+test('rural population is the denominator even when total population is much larger', () => {
+  const input = { ...district(1, 1000, 2, 50), population: 100000 };
+  const [result] = calculateWaterPriority([input]);
+  assert.equal(result.ruralWaterRequestsPer100k, 200);
+  input.ruralPopulation = null;
+  assert.equal(calculateWaterPriority([input])[0].priorityScore, null);
 });
 
 test('empty input returns an empty array', () => {
@@ -127,7 +135,7 @@ test('all incomplete results avoid nonfinite calculated values and use ID order'
   const result = calculateWaterPriority([district(2, 0, 1), district(1, 0, 2)]);
   assert.deepEqual(result.map(row => row.districtId), [1, 2]);
   for (const row of result) {
-    for (const field of ['waterRequestsPer100k', 'demandIndex', 'infrastructureGap', 'priorityScore']) {
+    for (const field of ['ruralWaterRequestsPer100k', 'demandIndex', 'infrastructureGap', 'priorityScore']) {
       assert.equal(row[field], null);
     }
   }
