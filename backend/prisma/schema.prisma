@@ -57,19 +57,24 @@ model District {
 }
 
 model CitizenRequest {
-  id           Int      @id @default(autoincrement())
-  districtId   Int
-  originalText String   @db.Text
-  language     String
-  channel      Channel
-  category     Category
-  areaType     AreaType @default(UNKNOWN)
-  subcategory  String?
-  urgency      Urgency?
-  latitude     Float?
-  longitude    Float?
-  createdAt    DateTime @default(now())
-  district     District @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id             Int       @id @default(autoincrement())
+  districtId     Int
+  originalText   String    @db.Text
+  language       String
+  channel        Channel
+  category       Category
+  areaType       AreaType  @default(UNKNOWN)
+  subcategory    String?
+  urgency        Urgency?
+  latitude       Float?
+  longitude      Float?
+  summaryEnglish String?   @db.Text
+  locationText   String?
+  aiModel        String?
+  aiConfidence   Float?
+  aiProcessedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  district       District  @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([districtId, createdAt])
 }

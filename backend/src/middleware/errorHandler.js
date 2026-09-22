@@ -1,3 +1,5 @@
+import { ServiceError } from '../errors/serviceError.js';
+
 export function errorHandler(error, req, res, next) {
   if (res.headersSent) {
     return next(error);
@@ -20,8 +22,11 @@ export function errorHandler(error, req, res, next) {
   }
 
   if (status >= 500) {
-    console.error(error);
+    // Do not log raw SDK/Prisma errors or citizen text: they may contain secrets.
+    console.error('Request failed', { status, code: error instanceof ServiceError ? error.code : 'INTERNAL_ERROR' });
   }
+
+  if (error instanceof ServiceError) message = error.message;
 
   res.status(status).json({ success: false, message });
 }

@@ -17,7 +17,7 @@ This repository contains the application scaffold and first database layer:
 - Validated Census 2011 district population import with source/year provenance.
 - Backend HTTP tests using Node's built-in test runner.
 
-Gemini, Google Maps, authentication, dashboards, and Google Cloud deployment are deferred.
+Gemini now structures multilingual citizen requests. Google Maps, authentication, dashboards, audio processing, and Google Cloud deployment remain deferred.
 
 ## Requirements
 
@@ -167,11 +167,11 @@ Verification: the eight dry-run results matched an independent workbook inspecti
 | GET | `/api/districts/:id/requests` | That district's requests, newest first |
 | GET | `/api/districts/:id/infrastructure` | That district's infrastructure metrics |
 
-Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. No write endpoints or frontend data pages are implemented.
+Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. District routes remain read-only; citizen-request submission is a separate endpoint. No frontend data pages are implemented.
 
 ## Rural water-priority analytics
 
-`methodology.scope` is **Rural water infrastructure prototype**. JJM coverage is rural household tap-connection coverage, so demand is restricted to explicitly rural requests and normalized using rural population. Coverage is a household percentage, while demand is a request rate per rural person; the heuristic combines their indices and does not treat households and persons as interchangeable. **The JJM importer is implemented and dry-run validated, but no real JJM import has been executed. Current database coverage remains fictional until that import is authorized and run.** Census 2011 remains historical context, not current population.
+`methodology.scope` is **Rural water infrastructure prototype**. JJM coverage is rural household tap-connection coverage, so demand is restricted to explicitly rural requests and normalized using rural population. Coverage is a household percentage, while demand is a request rate per rural person; the heuristic combines their indices and does not treat households and persons as interchangeable. **The separately authorized real JJM import is complete in local MySQL: eight official metrics dated 21/09/2026 replaced demo coverage, and a rerun updated zero rows.** Census 2011 remains historical context, not current population.
 
 Migration `20260922091719_rural_water_scope` adds nullable district rural/urban populations and `CitizenRequest.areaType` (`RURAL`, `URBAN`, `UNKNOWN`, default `UNKNOWN`). Existing unclassified requests stay UNKNOWN until explicitly classified. Shared population source/year applies to all three counts. The processed CSV contains `applicationDistrictName,sourceDistrictName,censusDistrictCode,totalPopulation,ruralPopulation,urbanPopulation,populationSource,populationSourceYear`.
 
@@ -209,7 +209,7 @@ Example using historical Census rural population and fictional requests/coverage
 
 The backend suite includes scoring, rounding, threshold boundaries, equal demand, missing/invalid data, ordering, query filters, and safe database error handling. Tests also cover the rural population denominator, exclusion of URBAN/UNKNOWN requests, and Total/Rural/Urban Census reconciliation. Import and seed reruns were verified against local MySQL without further changes.
 
-## JJM rural tap-connection import (dry-run validated; real import pending)
+## JJM rural tap-connection import
 
 The two official, manually supplied files are in `backend/data/raw/jjm/`:
 
@@ -248,7 +248,7 @@ npm run import:jjm -- --dry-run
 
 Dry-run validates both sources, prints all eight rows and both reconciliation results, writes `data/processed/jjm-karnataka-rural-coverage-2026-09-21.csv`, and makes **zero database connections or writes**. The CSV has exactly the eleven requested fields and eight target districts. Database replacement eligibility is checked only by the real command.
 
-Migration **20260922120000_jjm_metric_provenance** adds nullable `InfrastructureMetric.sourceDate` and `sourceUrl`. It is prepared but **not applied** in this dry-run-only phase; apply it and regenerate Prisma before running the updated application against MySQL. No real importer or seed command was run as part of this implementation. After separate authorization, the deployment/import sequence is:
+Migration **20260922120000_jjm_metric_provenance** adds nullable `InfrastructureMetric.sourceDate` and `sourceUrl`. It has been applied locally and Prisma regenerated. The authorized real import updated eight metrics, with zero updates on rerun; Census fields and existing requests were preserved. For another initialized environment, the deployment/import sequence is:
 
 ```bash
 npx prisma migrate deploy
@@ -260,7 +260,67 @@ The real import prints the same source-validation table before acquiring Prisma.
 
 Analytics weights, thresholds, normalization, denominator for demand, sorting and missing-data rules are unchanged. Methodology metadata identifies the Census 2011 demographic context, JJM import context, synthetic citizen demand and prototype scoring. Its `coverageData` checks selected metric provenance to distinguish demo, official, mixed and missing sources; dry-run preparation does not relabel existing demo metrics as official. The provenance migration is a prerequisite for the updated selection.
 
-The tests use small synthetic HTML fixtures and an isolated transactional database double. They cover HTML detection, aliases, headers, date/year, all six bands, exact reconciliation, private connections, invalid inputs, inclusive denominator, precision, no-connection dry run, in-place replacement, preservation, idempotency, seed protection and existing APIs. They do not require or commit the raw exports. Real MySQL replacement remains unexecuted by design.
+The tests use small synthetic HTML fixtures and an isolated transactional database double. They cover HTML detection, aliases, headers, date/year, all six bands, exact reconciliation, private connections, invalid inputs, inclusive denominator, precision, no-connection dry run, in-place replacement, preservation, idempotency, seed protection and existing APIs. They do not require or commit the raw exports. The separate local MySQL import was verified with before/after snapshots and live API checks.
+
+## Gemini multilingual request understanding
+
+Gemini converts unstructured citizen text into structured request metadata: language, category, subcategory, urgency, area type, an English summary, an explicitly stated location, and classification confidence. The MVP supports English, Kannada and Hindi, including mixed/noisy/transliterated input on a best-effort basis; other or unidentifiable languages use `other`. This is the meaningful AI component. **Deterministic backend analytics, not Gemini, calculates infrastructure priority.** Existing weights, normalization and thresholds are unchanged.
+
+The backend uses the official [`@google/genai` SDK](https://googleapis.github.io/js-genai/) and [`gemini-3.8-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), with [structured JSON output](https://ai.google.dev/gemini-api/docs/structured-output). It sends an explicit JSON Schema and validates the response again with Ajv, with no coercion or silent removal of extra fields. Additional checks enforce summary/identifier lengths and require locationText to be a verbatim substring of the citizen text, in its original script. This prevents accepting an unstated location string but does not prove that every accepted substring is a place. Summaries and classifications can be imperfect and must not be treated as official decisions. Confidence is the model's self-assessment, not a calibrated accuracy probability.
+
+Configure only the ignored `backend/.env` locally:
+
+```dotenv
+GEMINI_API_KEY=YOUR_LOCAL_KEY
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+Obtain your own key through Google AI Studio. Never commit it or put it in a frontend/VITE variable. `backend/.env.example` contains an empty key and the default model only. Restart the backend after changing `.env`. Configuration is checked lazily: without a key the server and existing non-AI routes remain available, while valid AI requests return HTTP 503 with `AI service is not configured`. No fake result is returned. No key was configured during implementation, so no real Gemini request was made.
+
+Architecture: routes validate request bodies; controllers handle HTTP; the shared analysis service calls an isolated Gemini client and validates output; the create service alone persists an explicit field mapping through Prisma. The client has a fixed server instruction, separate JSON-encoded citizen data, a 30-second abort/deadline and one attempt. No function calling, agents, RAG, embeddings or database access is provided to Gemini. Prompt-injection-like text cannot set the server instruction, schema, model, database IDs or write fields. These boundaries and output validation do not guarantee that real model classifications resist every semantic manipulation; tests verify server behavior, not model accuracy.
+
+`POST /api/citizen-requests/analyze` accepts only:
+
+```json
+{ "text": "Our village pipeline has been broken for two weeks." }
+```
+
+Text must be a string, at most 5,000 JavaScript characters (UTF-16 code units) before trimming, and nonempty after trimming. The endpoint returns HTTP 200 with `{ "success": true, "data": { ...validatedAnalysis, "model": "gemini-3.8-flash" } }`. It makes no database calls or writes.
+
+`POST /api/citizen-requests` accepts only:
+
+```json
+{ "districtId": 1, "text": "Our village pipeline has been broken for two weeks.", "channel": "TEXT" }
+```
+
+districtId must be a positive JSON integer within the MySQL Int range and refer to an existing district. It is checked before calling Gemini. channel is required and must be TEXT, VOICE or MESSAGING; these describe the origin of supplied **text**, with no audio or speech processing. The service analyzes the text and returns HTTP 201 with `{ "success": true, "data": createdCitizenRequest }`. It stores the trimmed original text, application-supplied district/channel, validated AI fields, configured model, confidence and server processing timestamp. IDs and timestamps come from the server/database; coordinates remain null. Extra body fields, such as a client-supplied category, confidence, model, district in the analyze endpoint, or priority score, are rejected.
+
+Migration **20260923090000_citizen_request_ai_analysis** adds nullable `summaryEnglish` (TEXT), `locationText`, `aiModel`, `aiConfidence`, and `aiProcessedAt` to CitizenRequest. The local schema migration is applied; existing requests are not reclassified or backfilled. Existing 32 synthetic demo requests remain valid with null AI fields. Census and JJM records are unchanged. For another environment, run `npx prisma migrate deploy` and `npm run prisma:generate` before using the new fields.
+
+The instruction uses UNKNOWN unless rural/urban context is explicit, OTHER when the issue does not clearly fit, LOW absent evidence of elevated urgency, and CRITICAL only for an explicitly indicated immediate serious emergency. summaryEnglish must preserve meaning; schemes, places, dates and other details must not be invented. Output enums, nullable fields, confidence 0–1, short uppercase subcategories and absence of extra fields are enforced before either endpoint succeeds.
+
+| Condition | HTTP | Public message |
+| --- | ---: | --- |
+| Invalid input, channel or ID type | 400 | Invalid request |
+| Unknown district | 404 | District not found |
+| JSON body exceeds 100kb | 413 | Request body too large |
+| Missing key/invalid model configuration | 503 | AI service is not configured |
+| Gemini timeout | 504 | AI service timed out |
+| Network or Gemini service failure | 502 | AI service is temporarily unavailable |
+| Invalid, blocked or truncated model output | 502 | AI service returned an invalid analysis |
+| Database/internal failure | 500 | Internal server error |
+
+The centralized handler never returns raw SDK/Prisma errors. Server error logs contain only status and a server-owned error code, not keys, full stacks, citizen text or model payloads. Failed analysis never creates a request. The create endpoint is not an upsert/idempotent submission API: repeated successful POSTs create separate requests. It is intended for this local MVP; no authentication was added.
+
+Normal `npm test` uses mocked Gemini responses and requires no API key. It covers English/Kannada/Hindi mock handling, schema and evidence checks, invalid inputs, missing configuration, failures/timeouts, prompt boundaries, zero-write analysis, explicit create mapping, and existing APIs. Mock classifications are not claims about real Gemini accuracy. No synthetic request was added to the real database during these tests. New successful rural WATER submissions will naturally enter the existing deterministic demand counts; this changes inputs, not the formula.
+
+For a separate, explicit manual smoke test after configuring a key:
+
+```bash
+npm run smoke:gemini
+```
+
+This sends the three English/Kannada/Hindi village-pipeline examples to Gemini sequentially, prints each validated structured result, and never connects to Prisma or saves data. It is not part of `npm test` and real outputs may differ between languages or runs. The current Census 2011 population, JJM reported connections through 21/09/2026, and existing synthetic demand still support prototype demonstrations, not real policy recommendations.
 
 ## Run locally
 
