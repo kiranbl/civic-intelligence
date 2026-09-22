@@ -171,7 +171,7 @@ Successful district responses use `{ "success": true, "data": ... }`. Collection
 
 ## Rural water-priority analytics
 
-`methodology.scope` is **Rural water infrastructure prototype**. JJM FHTC coverage is rural household tap-water coverage, so demand is restricted to explicitly rural requests and normalized using rural population. Coverage is a household percentage, while demand is a request rate per rural person; the heuristic combines their indices and does not treat households and persons as interchangeable. **No JJM data has been imported. Current FHTC values are fictional until a JJM importer is added.** Census 2011 remains historical context, not current population.
+`methodology.scope` is **Rural water infrastructure prototype**. JJM coverage is rural household tap-connection coverage, so demand is restricted to explicitly rural requests and normalized using rural population. Coverage is a household percentage, while demand is a request rate per rural person; the heuristic combines their indices and does not treat households and persons as interchangeable. **The JJM importer is implemented and dry-run validated, but no real JJM import has been executed. Current database coverage remains fictional until that import is authorized and run.** Census 2011 remains historical context, not current population.
 
 Migration `20260922091719_rural_water_scope` adds nullable district rural/urban populations and `CitizenRequest.areaType` (`RURAL`, `URBAN`, `UNKNOWN`, default `UNKNOWN`). Existing unclassified requests stay UNKNOWN until explicitly classified. Shared population source/year applies to all three counts. The processed CSV contains `applicationDistrictName,sourceDistrictName,censusDistrictCode,totalPopulation,ruralPopulation,urbanPopulation,populationSource,populationSourceYear`.
 
@@ -208,6 +208,59 @@ Missing coverage or a nonfinite/out-of-range value produces `INCOMPLETE`, with n
 Example using historical Census rural population and fictional requests/coverage: Mandya has 1 rural water request and 1,497,407 rural persons. Its rate is `100000 / 1497407 = 0.0667821107...`. Minimum rate (Tumakuru) is `0.0480791883...`; maximum (Bengaluru Rural) is `0.1384698253...`. Demand index is `(0.0667821107... - 0.0480791883...) / (0.1384698253... - 0.0480791883...) * 100 = 20.6912164...`. With fictional rural FHTC coverage of 49%, the gap is `51`, and score is `20.6912164... * 0.5 + 51 * 0.5 = 35.8456082...`, displayed as **35.85 (MEDIUM)**.
 
 The backend suite includes scoring, rounding, threshold boundaries, equal demand, missing/invalid data, ordering, query filters, and safe database error handling. Tests also cover the rural population denominator, exclusion of URBAN/UNKNOWN requests, and Total/Rural/Urban Census reconciliation. Import and seed reruns were verified against local MySQL without further changes.
+
+## JJM rural tap-connection import (dry-run validated; real import pending)
+
+The two official, manually supplied files are in `backend/data/raw/jjm/`:
+
+- `State wise PWS and FHTC Coverage.xls`: Format J1, Karnataka, All Districts.
+- `Habitation wise FHTC Coverage( Reported Till 21_09.xls`: Format J5, Karnataka, Financial Year **2026-2027**, explicitly **Reported Till 21/09/2026**.
+
+Both are HTML Excel exports, not binary XLS workbooks. The importer detects the HTML/Excel signature and parses with Cheerio; it never executes scripts, fetches links, scrapes, or calls an API. Raw exports are ignored by Git and never modified. See `backend/data/raw/README.md` for source URLs, inspection details, file sizes, and hashes. The parser validates the inspected header labels and row/column spans and fails if the layout changes. J5's source spelling `House Connectons` is intentionally recognized as printed.
+
+J1 has 31 district rows with village counts; J5 has 31 district rows with habitation counts. These geographic counts are **not** treated as interchangeable. Only the PWS household and tap-connection totals are reconciled, district by district. J5 contains six PWS coverage bands: zero, >0 to <25%, >=25 to <50%, >=50 to <75%, >=75 to <100%, and >=100%. Every band's household and connection counts participate, including the zero-coverage band.
+
+The explicit name map recognizes Bengaluru Urban, Bengaluru Rural, Mysuru, Mandya, Tumakuru, Hassan, Kolar, and Ramanagara case-insensitively. It preserves source spelling, including `BENGALURU RURAL`, `TUMAKURU`, and `RAMANAGARA`. It does not fuzzy-match or reuse historical Census aliases. Each district must appear exactly once in each source; missing/duplicate matches, incorrect state/category/date/year, invalid counts, or cross-source mismatches stop the run.
+
+The adopted calculation for this validated source pair is:
+
+```text
+H = households in villages with PWS (J1)
+U = unconnected households in villages without PWS (J1)
+P = households with private connections in villages without PWS (J1)
+C = households with household tap connections in villages with PWS (J1)
+require P = 0
+require H = sum of J5 household counts across all six PWS bands
+require C = sum of J5 connection counts across all six PWS bands
+totalReportedRuralHouseholds = H + U
+ruralFhtcCoverage = C / (H + U) * 100
+```
+
+The denominator includes households in non-PWS villages; it is not Census population or PWS households alone. A positive denominator, nonnegative integer counts, C <= H and C <= H + U, and coverage within 0–100 are required. A future nonzero P requires a methodological decision and cannot be imported by this script. Values remain full-precision JavaScript numbers internally and in database writes; the printed table and processed CSV round percentages to two decimals. The CSV is a reporting extract, not the input to the importer.
+
+Source date **2026-09-21** comes explicitly from J5. J1 itself has no date; matching J1/J5 household and connection totals reconciles this supplied pair without inventing a separate J1 timestamp. The metric represents **JJM-reported rural household tap-connection coverage as of 21/09/2026**, not independently verified water-service functionality. Matching totals do not certify water quantity, quality, or regularity. Census 2011 rural population remains historical context; current administrative boundary compatibility is not established by matching names alone. Citizen requests remain fictional/synthetic demo data.
+
+From `backend/`, the safe validation command is:
+
+```bash
+npm run import:jjm -- --dry-run
+```
+
+Dry-run validates both sources, prints all eight rows and both reconciliation results, writes `data/processed/jjm-karnataka-rural-coverage-2026-09-21.csv`, and makes **zero database connections or writes**. The CSV has exactly the eleven requested fields and eight target districts. Database replacement eligibility is checked only by the real command.
+
+Migration **20260922120000_jjm_metric_provenance** adds nullable `InfrastructureMetric.sourceDate` and `sourceUrl`. It is prepared but **not applied** in this dry-run-only phase; apply it and regenerate Prisma before running the updated application against MySQL. No real importer or seed command was run as part of this implementation. After separate authorization, the deployment/import sequence is:
+
+```bash
+npx prisma migrate deploy
+npm run prisma:generate
+npm run import:jjm
+```
+
+The real import prints the same source-validation table before acquiring Prisma. A serializable transaction preflights all eight existing Karnataka districts and requires exactly one existing `RURAL_FHTC_COVERAGE` metric each. Only an exact fictional demo source/year or this same official JJM snapshot is replaceable. Missing/duplicate metrics or unrelated sources abort without choosing, deleting, or overwriting them. It updates existing IDs in place with `unit=PERCENT`, `source=Jal Jeevan Mission`, `sourceYear=2026`, `sourceDate=2026-09-21T00:00:00.000Z`, the official J1 report URL, and the full-precision coverage. Reruns skip unchanged rows and timestamps. No Census fields, requests, or other metric types are written. Seed reruns preserve existing official rural coverage instead of recreating demo metrics. Run import/seed commands serially.
+
+Analytics weights, thresholds, normalization, denominator for demand, sorting and missing-data rules are unchanged. Methodology metadata identifies the Census 2011 demographic context, JJM import context, synthetic citizen demand and prototype scoring. Its `coverageData` checks selected metric provenance to distinguish demo, official, mixed and missing sources; dry-run preparation does not relabel existing demo metrics as official. The provenance migration is a prerequisite for the updated selection.
+
+The tests use small synthetic HTML fixtures and an isolated transactional database double. They cover HTML detection, aliases, headers, date/year, all six bands, exact reconciliation, private connections, invalid inputs, inclusive denominator, precision, no-connection dry run, in-place replacement, preservation, idempotency, seed protection and existing APIs. They do not require or commit the raw exports. Real MySQL replacement remains unexecuted by design.
 
 ## Run locally
 

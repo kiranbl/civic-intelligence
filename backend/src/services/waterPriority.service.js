@@ -1,7 +1,7 @@
 import prisma from '../config/prisma.js';
 import {
   WATER_PRIORITY_WEIGHTS, WATER_PRIORITY_LEVELS, EQUAL_DEMAND_INDEX,
-  RURAL_FHTC_METRIC_TYPE, WATER_PRIORITY_METHODOLOGY,
+  RURAL_FHTC_METRIC_TYPE, waterPriorityMethodology,
 } from '../config/waterPriority.js';
 
 function roundForDisplay(value) {
@@ -85,10 +85,10 @@ export async function getWaterPriority() {
         where: { metricType: RURAL_FHTC_METRIC_TYPE },
         orderBy: [{ sourceYear: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         take: 1,
-        select: { value: true },
+        select: { value: true, source: true, sourceYear: true, sourceDate: true },
       },
     },
   });
 
-  return { data: calculateWaterPriority(districts), methodology: WATER_PRIORITY_METHODOLOGY };
+  return { data: calculateWaterPriority(districts), methodology: waterPriorityMethodology(districts) };
 }

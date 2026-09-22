@@ -19,6 +19,6 @@ logs/
 .DS_Store
 Thumbs.db
 
-# External Census source files; retain small source documentation.
+# External Census and JJM source files; retain small source documentation.
 /backend/data/raw/*
 !/backend/data/raw/README.md

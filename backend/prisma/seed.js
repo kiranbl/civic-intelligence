@@ -1,8 +1,8 @@
 // FICTIONAL DEMO DATA ONLY. Replace all populations and metrics with verified
 // data later. No values or requests in this seed come from official datasets.
 import prisma from '../src/config/prisma.js';
-import { demoDistricts, demoRequests, demoSource, demoYear } from './demoData.js';
-import { RURAL_FHTC_METRIC_TYPE } from '../src/config/waterPriority.js';
+import { demoDistricts, demoRequests } from './demoData.js';
+import { ensureDemoCoverage } from './demoCoverage.js';
 
 async function seed() {
   const counts = { districts: 0, requests: 0, infrastructureMetrics: 0 };
@@ -19,26 +19,7 @@ async function seed() {
       });
       counts.districts += 1;
 
-      const metricKey = {
-        districtId: district.id,
-        metricType: RURAL_FHTC_METRIC_TYPE,
-        source: demoSource,
-        sourceYear: demoYear,
-      };
-      // Only rename legacy metrics with the exact fictional source/year/district.
-      const legacyKey = { ...metricKey, metricType: 'TAP_WATER_COVERAGE' };
-      const existingMetric = await tx.infrastructureMetric.findFirst({ where: metricKey });
-      const legacyMetrics = await tx.infrastructureMetric.findMany({ where: legacyKey });
-      if (legacyMetrics.length > 1 || (existingMetric && legacyMetrics.length)) {
-        throw new Error('Ambiguous duplicate demo coverage metrics; refusing to choose or delete one.');
-      }
-      if (!existingMetric) {
-        if (legacyMetrics.length === 1) {
-          await tx.infrastructureMetric.update({ where: { id: legacyMetrics[0].id }, data: { metricType: RURAL_FHTC_METRIC_TYPE } });
-        } else {
-          await tx.infrastructureMetric.create({ data: { ...metricKey, value: fixture.coverage, unit: 'percent' } });
-        }
-      }
+      await ensureDemoCoverage(tx, district.id, fixture.coverage);
       counts.infrastructureMetrics += 1;
 
       for (const request of demoRequests(fixture.name)) {

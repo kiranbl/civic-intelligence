@@ -15,10 +15,12 @@
     "prisma:format": "prisma format",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "node prisma/seed.js",
-    "import:census": "node scripts/import/censusPopulation.js"
+    "import:census": "node scripts/import/censusPopulation.js",
+    "import:jjm": "node scripts/import/jjmCoverage.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.1",
     "express": "^5.2.1",

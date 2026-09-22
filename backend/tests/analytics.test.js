@@ -32,7 +32,7 @@ after(async () => {
 test('water analytics filters rural WATER counts and selects the newest rural FHTC metric', async () => {
   const query = mock.fn(async () => [{
     id: 1, name: 'Demo', state: 'Karnataka', ruralPopulation: 100000,
-    _count: { requests: 10 }, infrastructure: [{ value: 60 }],
+    _count: { requests: 10 }, infrastructure: [{ value: 60, source: 'FICTIONAL DEMO ONLY - replace with verified data' }],
   }]);
   prisma.district.findMany = query;
   const response = await fetch(baseUrl);
@@ -48,13 +48,15 @@ test('water analytics filters rural WATER counts and selects the newest rural FH
   assert.equal(body.methodology.infrastructureGapWeight, 0.5);
   assert.match(body.methodology.description, /Prototype/);
   assert.equal(body.methodology.scope, 'Rural water infrastructure prototype');
-  assert.match(body.methodology.coverageData, /fictional demo data, not real JJM/);
+  assert.match(body.methodology.coverageData, /JJM import is pending/);
+  assert.match(body.methodology.infrastructureContext, /21\/09\/2026/);
+  assert.match(body.methodology.citizenDemand, /Fictional\/synthetic/);
   const selection = query.mock.calls[0].arguments[0].select;
   assert.deepEqual(selection._count, { select: { requests: { where: { category: 'WATER', areaType: 'RURAL' } } } });
   assert.deepEqual(selection.infrastructure, {
     where: { metricType: 'RURAL_FHTC_COVERAGE' },
     orderBy: [{ sourceYear: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
-    take: 1, select: { value: true },
+    take: 1, select: { value: true, source: true, sourceYear: true, sourceDate: true },
   });
 });
 

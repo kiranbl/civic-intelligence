@@ -75,16 +75,18 @@ model CitizenRequest {
 }
 
 model InfrastructureMetric {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   districtId Int
   metricType String
   value      Float
   unit       String
   source     String
   sourceYear Int
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  district   District @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceDate DateTime?
+  sourceUrl  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  district   District  @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([districtId, metricType])
 }
