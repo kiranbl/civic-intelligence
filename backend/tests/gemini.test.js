@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 import { createGeminiClient } from '../src/clients/gemini.client.js';
 import { getGeminiConfig } from '../src/config/gemini.js';
 import { REQUEST_ANALYSIS_SCHEMA } from '../src/schemas/requestAnalysis.schema.js';
 import { CITIZEN_REQUEST_INSTRUCTION } from '../src/prompts/citizenRequest.prompt.js';
 import { validateRequestAnalysis } from '../src/validators/requestAnalysis.validator.js';
+
+// Configuration tests exercise the real environment reader against a test-owned
+// environment copy. Never inherit the developer's Gemini settings or key.
+let originalEnvironment;
+beforeEach(() => {
+  originalEnvironment = process.env;
+  process.env = {
+    ...originalEnvironment,
+    GEMINI_API_KEY: 'test-only-placeholder',
+    GEMINI_MODEL: 'gemini-3.8-flash',
+    GEMINI_FALLBACK_MODELS: 'gemini-3.6-flash,gemini-3.5-flash-lite',
+  };
+});
+afterEach(() => { process.env = originalEnvironment; });
 
 const output = { language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'The village pipeline is broken.', locationText: null, confidence: 0.94 };
 const config = () => ({ apiKey: 'test-only-placeholder', model: 'gemini-3.8-flash' });
@@ -58,15 +72,15 @@ test('default and configured model are server configuration, not citizen instruc
 
 test('network and SDK failures are sanitized without exposing causes or stacks', async () => {
   for (const failure of [new Error('SDK internal credential test-only-placeholder'), Object.assign(new Error('upstream body'), { status: 429 })]) {
-    const client = createGeminiClient({ config, sdk: () => ({ models: { generateContent: async () => { throw failure; } } }) });
-    await assert.rejects(client.analyze('Water'), error => error.code === 'AI_UNAVAILABLE' && !error.stack.includes('test-only-placeholder') && error.cause === undefined);
+    const client = createGeminiClient({ config, sleep: async () => {}, sdk: () => ({ models: { generateContent: async () => { throw failure; } } }) });
+    await assert.rejects(client.analyze('Water'), error => error.code === (failure.status === 429 ? 'AI_CAPACITY_UNAVAILABLE' : 'AI_UNAVAILABLE') && !error.stack.includes('test-only-placeholder') && error.cause === undefined);
   }
 });
 
 test('hard deadline aborts a stalled SDK request and returns a controlled timeout', async () => {
   let signal;
-  const client = createGeminiClient({ config, timeoutMs: 10, sdk: () => ({ models: { generateContent: args => { signal = args.config.abortSignal; return new Promise(() => {}); } } }) });
-  await assert.rejects(client.analyze('Water'), { status: 504, code: 'AI_TIMEOUT' });
+  const client = createGeminiClient({ config, timeoutMs: 10, sleep: async () => {}, sdk: () => ({ models: { generateContent: args => { signal = args.config.abortSignal; return new Promise(() => {}); } } }) });
+  await assert.rejects(client.analyze('Water'), { status: 503, code: 'AI_CAPACITY_UNAVAILABLE' });
   assert.equal(signal.aborted, true);
 });
 
@@ -95,4 +109,20 @@ test('location must be copied from explicitly supplied text, never invented', ()
   const raw = JSON.stringify({ ...output, locationText: 'ಮಂಡ್ಯ' });
   assert.equal(validateRequestAnalysis(raw, 'ಮಂಡ್ಯ ನೀರು ಬೇಕು').locationText, 'ಮಂಡ್ಯ');
   assert.throws(() => validateRequestAnalysis(raw, 'Our village needs water'), { code: 'AI_INVALID_OUTPUT' });
+});
+
+test('fallback environment configuration preserves order and validates model names', () => {
+  const previousKey = process.env.GEMINI_API_KEY, previousModels = process.env.GEMINI_FALLBACK_MODELS;
+  process.env.GEMINI_API_KEY = 'test-only-placeholder';
+  try {
+    delete process.env.GEMINI_FALLBACK_MODELS;
+    assert.deepEqual(getGeminiConfig().fallbackModels, ['gemini-3.6-flash', 'gemini-3.5-flash-lite']);
+    process.env.GEMINI_FALLBACK_MODELS = ' gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.6-flash ';
+    assert.deepEqual(getGeminiConfig().fallbackModels, ['gemini-3.5-flash-lite', 'gemini-3.6-flash']);
+    process.env.GEMINI_FALLBACK_MODELS = 'gemini-3.6-flash,invalid model';
+    assert.throws(getGeminiConfig, { code: 'AI_NOT_CONFIGURED' });
+  } finally {
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previousKey;
+    if (previousModels === undefined) delete process.env.GEMINI_FALLBACK_MODELS; else process.env.GEMINI_FALLBACK_MODELS = previousModels;
+  }
 });

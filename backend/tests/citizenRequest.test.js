@@ -102,3 +102,25 @@ test('all 32 existing demo fixtures remain valid without AI metadata', () => {
   assert.equal(requests.length, 32);
   assert(requests.every(r => r.originalText.startsWith('[DEMO ONLY') && r.summaryEnglish === undefined && r.aiModel === undefined));
 });
+
+test('fallback model is stored as aiModel and analysis remains write-free', async () => {
+  replace(geminiClient, 'analyze', async () => ({ text: JSON.stringify(output), model: 'gemini-3.6-flash' }));
+  const analysis = await post('/analyze', { text: 'Water' });
+  assert.equal(analysis.body.data.model, 'gemini-3.6-flash');
+  assert.equal(writes.length, 0);
+  const saved = await post('', { districtId: 1, text: 'Water', channel: 'TEXT' });
+  assert.equal(saved.status, 201);
+  assert.equal(writes[0].data.aiModel, 'gemini-3.6-flash');
+});
+test('capacity exhaustion returns controlled HTTP 503 with no retry details or writes', async () => {
+  replace(geminiClient, 'analyze', async () => { throw new ServiceError('AI_CAPACITY_UNAVAILABLE'); });
+  assert.deepEqual(await post('/analyze', { text: 'Water' }), { status: 503, body: { success: false, message: 'AI service is temporarily unavailable' } });
+  assert.equal(writes.length, 0);
+});
+
+test('second fallback model is preserved when saving a request', async () => {
+  replace(geminiClient, 'analyze', async () => ({ text: JSON.stringify(output), model: 'gemini-3.5-flash-lite' }));
+  const result = await post('', { districtId: 1, text: 'Water', channel: 'TEXT' });
+  assert.equal(result.status, 201);
+  assert.equal(writes[0].data.aiModel, 'gemini-3.5-flash-lite');
+});

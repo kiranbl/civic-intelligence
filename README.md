@@ -273,9 +273,10 @@ Configure only the ignored `backend/.env` locally:
 ```dotenv
 GEMINI_API_KEY=YOUR_LOCAL_KEY
 GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODELS=gemini-3.6-flash,gemini-3.5-flash-lite
 ```
 
-Obtain your own key through Google AI Studio. Never commit it or put it in a frontend/VITE variable. `backend/.env.example` contains an empty key and the default model only. Restart the backend after changing `.env`. Configuration is checked lazily: without a key the server and existing non-AI routes remain available, while valid AI requests return HTTP 503 with `AI service is not configured`. No fake result is returned. No key was configured during implementation, so no real Gemini request was made.
+Obtain your own key through Google AI Studio. Never commit it or put it in a frontend/VITE variable. `backend/.env.example` contains an empty key and the default primary/fallback model names. Restart the backend after changing `.env`. Configuration is checked lazily: without a key the server and existing non-AI routes remain available, while valid AI requests return HTTP 503 with `AI service is not configured`. No fake result is returned. Automated tests use mocked calls; live smoke testing is an explicit manual operation.
 
 Architecture: routes validate request bodies; controllers handle HTTP; the shared analysis service calls an isolated Gemini client and validates output; the create service alone persists an explicit field mapping through Prisma. The client has a fixed server instruction, separate JSON-encoded citizen data, a 30-second abort/deadline and one attempt. No function calling, agents, RAG, embeddings or database access is provided to Gemini. Prompt-injection-like text cannot set the server instruction, schema, model, database IDs or write fields. These boundaries and output validation do not guarantee that real model classifications resist every semantic manipulation; tests verify server behavior, not model accuracy.
 
@@ -305,7 +306,8 @@ The instruction uses UNKNOWN unless rural/urban context is explicit, OTHER when 
 | Unknown district | 404 | District not found |
 | JSON body exceeds 100kb | 413 | Request body too large |
 | Missing key/invalid model configuration | 503 | AI service is not configured |
-| Gemini timeout | 504 | AI service timed out |
+| Exhausted transient timeout retries/fallbacks | 503 | AI service is temporarily unavailable |
+| Exhausted primary/fallback capacity retries | 503 | AI service is temporarily unavailable |
 | Network or Gemini service failure | 502 | AI service is temporarily unavailable |
 | Invalid, blocked or truncated model output | 502 | AI service returned an invalid analysis |
 | Database/internal failure | 500 | Internal server error |
@@ -317,10 +319,10 @@ Normal `npm test` uses mocked Gemini responses and requires no API key. It cover
 For a separate, explicit manual smoke test after configuring a key:
 
 ```bash
-npm run smoke:gemini
+npm run smoke
 ```
 
-This sends the three English/Kannada/Hindi village-pipeline examples to Gemini sequentially, prints each validated structured result, and never connects to Prisma or saves data. It is not part of `npm test` and real outputs may differ between languages or runs. The current Census 2011 population, JJM reported connections through 21/09/2026, and existing synthetic demand still support prototype demonstrations, not real policy recommendations.
+This sends the English/Kannada/Hindi village-pipeline examples and one prompt-injection case to Gemini independently, prints each validated structured result, and never connects to Prisma or saves data. It is not part of `npm test` and real outputs may differ between languages or runs. The current Census 2011 population, JJM reported connections through 21/09/2026, and existing synthetic demand still support prototype demonstrations, not real policy recommendations.
 
 ## Run locally
 
@@ -390,3 +392,5 @@ The first database layer was verified with Prisma format/validate, migration app
 - Initial npm registry lookups failed with `ENOTCACHED` because the execution environment defaulted to offline mode. Online access resolved this.
 - Initial test/build attempts hit sandbox `spawn EPERM` errors, and Prisma's engine download hit `ECONNREFUSED`. Rerunning with the necessary execution/network permissions succeeded.
 - At installation, the frontend audit reported zero vulnerabilities. The backend audit reported three high-severity findings along the `prisma` -> `@prisma/config` -> `deepmerge-ts` dependency chain, arising from [GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). This remains unresolved. npm suggested downgrading Prisma to 6.12.0; no forced downgrade or unverified transitive override was applied.
+
+Gemini availability: HTTP 408, 429, 500, 502, 503 and 504, local deadlines and explicit transient transport errors receive three primary retries after 1000, 2000 and 4000 ms, each with 0–249 ms random jitter. After exhaustion, the configured fallback models are attempted once each in order (default: gemini-3.6-flash, then gemini-3.5-flash-lite). Generic errors, authentication/permission errors and invalid successful responses do not trigger switching. Each attempt retains a 30-second deadline. All models share the same instructions, input, JSON Schema and application validation. Returned `model` and saved `aiModel` identify the successful model. Configuration uses `GEMINI_FALLBACK_MODELS`; the old singular variable is no longer used. The manual `npm run smoke` command attempts English, Kannada, Hindi and a prompt-injection case independently, prints a summary, and exits nonzero after all cases if any failed. It never saves requests. Retry sleep and randomness are injectable in tests.

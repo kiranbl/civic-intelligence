@@ -1,3 +1,5 @@
+import { sanitizeLocationText } from './locationText.js';
+import { WATER_SUBCATEGORIES } from '../config/waterSubcategories.js';
 import Ajv from 'ajv';
 import { REQUEST_ANALYSIS_SCHEMA } from '../schemas/requestAnalysis.schema.js';
 import { ServiceError } from '../errors/serviceError.js';
@@ -11,7 +13,9 @@ export function validateRequestAnalysis(raw, originalText) {
   } catch {
     throw new ServiceError('AI_INVALID_OUTPUT');
   }
-  if (!validate(result) || !result.summaryEnglish.trim() || result.summaryEnglish.length > 1000
+  if (!validate(result)) throw new ServiceError('AI_INVALID_OUTPUT');
+  result.locationText = sanitizeLocationText(result.locationText);
+  if ((result.category === 'WATER' && result.subcategory !== null && !WATER_SUBCATEGORIES.includes(result.subcategory)) || !result.summaryEnglish.trim() || result.summaryEnglish.length > 1000
     || (result.subcategory !== null && !/^[A-Z][A-Z0-9_]{0,63}$/.test(result.subcategory))
     || (result.locationText !== null && (!result.locationText.trim() || result.locationText.length > 191
       || !originalText.includes(result.locationText)))) {

@@ -2,6 +2,7 @@ const errors = {
   AI_NOT_CONFIGURED: [503, 'AI service is not configured'],
   AI_TIMEOUT: [504, 'AI service timed out'],
   AI_UNAVAILABLE: [502, 'AI service is temporarily unavailable'],
+  AI_CAPACITY_UNAVAILABLE: [503, 'AI service is temporarily unavailable'],
   AI_INVALID_OUTPUT: [502, 'AI service returned an invalid analysis'],
 };
 
