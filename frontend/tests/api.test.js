@@ -12,7 +12,7 @@ for (const scenario of ['success', 'partial', 'empty', 'failure']) {
       return { ok: true, json: async () => ({ success: true, data }) };
     };
     try {
-      if (scenario === 'failure') await assert.rejects(loadDashboard(new AbortController().signal));
+      if (scenario === 'failure') { const result = await loadDashboard(new AbortController().signal); assert.equal(result.districtsFailed, true); assert.equal(result.requestCount, null); assert.equal(result.analyticsFailed, false); }
       else {
         const result = await loadDashboard(new AbortController().signal);
         assert.equal(result.connected, true);

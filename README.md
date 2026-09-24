@@ -17,7 +17,7 @@ This repository contains the application scaffold and first database layer:
 - Validated Census 2011 district population import with source/year provenance.
 - Backend HTTP tests using Node's built-in test runner.
 
-Gemini now structures multilingual citizen requests. Google Maps, authentication, audio processing, and Google Cloud deployment remain deferred.
+Gemini now structures multilingual citizen requests. The District Intelligence view includes optional Google Maps integration. Authentication, audio processing, and Google Cloud deployment remain deferred.
 
 ## Requirements
 
@@ -395,7 +395,24 @@ The first database layer was verified with Prisma format/validate, migration app
 
 Gemini availability: HTTP 408, 429, 500, 502, 503 and 504, local deadlines and explicit transient transport errors receive three primary retries after 1000, 2000 and 4000 ms, each with 0–249 ms random jitter. After exhaustion, the configured fallback models are attempted once each in order (default: gemini-3.6-flash, then gemini-3.5-flash-lite). Generic errors, authentication/permission errors and invalid successful responses do not trigger switching. Each attempt retains a 30-second deadline. All models share the same instructions, input, JSON Schema and application validation. Returned `model` and saved `aiModel` identify the successful model. Configuration uses `GEMINI_FALLBACK_MODELS`; the old singular variable is no longer used. The manual `npm run smoke` command attempts English, Kannada, Hindi and a prompt-injection case independently, prints a summary, and exits nonzero after all cases if any failed. It never saves requests. Retry sleep and randomness are injectable in tests.
 
-## Citizen request preview and submission
+## District Intelligence and optional Google Maps
+
+Select a district using the ranking buttons to inspect its demand, reported tap coverage, historical population, weighted score explanation, recent prototype requests, and provenance. Selection stays in `Home.jsx`; map markers use the same selection state. Score contributions use the API's methodology weights. Request history and map failures do not hide the remaining analysis. AI provenance is identified only from `aiModel` or `aiProcessedAt`; marked demo text identifies seeded synthetic requests.
+
+Maps uses `@googlemaps/js-api-loader` v2 `setOptions`/`importLibrary` and `AdvancedMarkerElement`. Follow the [Google Maps JavaScript setup](https://developers.google.com/maps/documentation/javascript/load-maps-js-api) and [Advanced Markers setup](https://developers.google.com/maps/documentation/javascript/advanced-markers/start):
+
+1. Enable Maps JavaScript API in your Google Cloud project and configure its required billing.
+2. Create a browser API key. Apply website/HTTP referrer restrictions for your allowed local and deployed origins, and API restrictions permitting **Maps JavaScript API** only.
+3. Create a JavaScript Map ID for Advanced Markers.
+4. Add `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` only to ignored `frontend/.env`, then restart Vite. The committed example leaves both blank. Do not reuse the backend Gemini key or commit real configuration values.
+
+A Maps browser key is public in the delivered browser bundle; restrictions are essential. `VITE_API_BASE_URL` remains the only backend URL configuration. Without a Maps key or Map ID, the panel displays a setup message and the rest of the dashboard works.
+
+All eight districts currently return null latitude/longitude: Bengaluru Urban, Bengaluru Rural, Mysuru, Mandya, Tumakuru, Hassan, Kolar and Ramanagara. The panel names missing locations and makes no Maps request until at least one valid coordinate is available. No coordinates are invented, geocoded or written to the database. When verified points become available, the initial map fits those Karnataka district points and selection pans without changing zoom. Markers represent district analysis, never complaint locations.
+
+Frontend tests mock HTTP and the Maps layer; they never call Google or write records. Census 2011 is historical demographic context, JJM coverage is reported through 21 Sep 2026, and citizen demand remains synthetic/AI demonstration data. This is not an official ranking or policy recommendation.
+
+## Citizen request preview and submission flow
 
 The dashboard includes a two-step demonstration form. Choose a district, enter up to 5,000 JavaScript string characters, and select **Analyze Request**. This calls `/api/citizen-requests/analyze` without saving. English, Kannada and Hindi examples only populate the textarea. Review the interpretation before selecting **Submit Request**. Editing text invalidates the preview; changing district uses the latest explicit selection.
 

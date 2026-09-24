@@ -10,10 +10,11 @@ export async function loadDashboard(signal) {
   const [health, districts, analytics] = await Promise.allSettled([
     get('/health', signal), get('/districts', signal), get('/analytics/water-priority', signal),
   ]);
-  if (districts.status !== 'fulfilled' || analytics.status !== 'fulfilled') throw new Error('Data unavailable');
-  const requests = await Promise.allSettled(districts.value.data.map(d => get('/districts/' + d.id + '/requests', signal)));
-  return { connected: health.status === 'fulfilled', districts: districts.value.data, analytics: analytics.value,
-    requestCount: requests.every(r => r.status === 'fulfilled') ? requests.reduce((sum, r) => sum + r.value.data.length, 0) : null };
+  const districtRows = districts.status === 'fulfilled' ? districts.value.data : [];
+  const analyticsValue = analytics.status === 'fulfilled' ? analytics.value : { data: [], methodology: null };
+  const requests = await Promise.allSettled(districtRows.map(d => get('/districts/' + d.id + '/requests', signal)));
+  return { connected: health.status === 'fulfilled', districts: districtRows, analytics: analyticsValue, districtsFailed: districts.status !== 'fulfilled', analyticsFailed: analytics.status !== 'fulfilled',
+    requestCount: districts.status === 'fulfilled' && requests.every(r => r.status === 'fulfilled') ? requests.reduce((sum, r) => sum + r.value.data.length, 0) : null };
 }
 
 // The backend owns model retries. One browser action sends one POST only.
@@ -54,3 +55,9 @@ async function post(path, body, expectedStatus) {
 }
 export const analyzeRequest = text => post('/citizen-requests/analyze', { text }, 200);
 export const submitRequest = (districtId, text) => post('/citizen-requests', { districtId, text, channel: 'TEXT' }, 201);
+
+export async function getDistrictRequests(id, signal) {
+  const body = await get('/districts/' + id + '/requests', signal);
+  if (!Array.isArray(body.data)) throw new Error('Request history unavailable');
+  return body.data;
+}

@@ -87,7 +87,7 @@ test('successful create refreshes dashboard count and analytics without losing s
   await waitFor(() => expect(document.querySelector('.priority-score').textContent).toBe('75.00'));
   expect(document.querySelectorAll('.summary-card strong')[1].textContent).toBe('2');
   expect(hits.filter(u=>u.endsWith('/water-priority'))).toHaveLength(2);
-  expect(hits.filter(u=>u.endsWith('/requests'))).toHaveLength(2);
+  await waitFor(() => expect(hits.filter(u=>u.endsWith('/requests'))).toHaveLength(4));
 });
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
