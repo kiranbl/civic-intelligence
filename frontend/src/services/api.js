@@ -61,3 +61,9 @@ export async function getDistrictRequests(id, signal) {
   if (!Array.isArray(body.data)) throw new Error('Request history unavailable');
   return body.data;
 }
+
+export async function getWaterPlanning(signal) {
+  const body = await get('/analytics/water-planning', signal);
+  if (!Array.isArray(body.data)) throw new Error('Planning unavailable');
+  return body.data;
+}

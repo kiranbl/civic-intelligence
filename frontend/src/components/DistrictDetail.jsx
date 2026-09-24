@@ -2,6 +2,7 @@ import PriorityBadge from './PriorityBadge';
 import MetricBar from './MetricBar';
 import DistrictMap from './DistrictMap';
 import DistrictRequests from './DistrictRequests';
+import PlanningInsight from './PlanningInsight';
 import { number, score, percent } from './format';
 export default function DistrictDetail({ district: d, methodology: m, districts = [], rows = [], onSelect, revision }) {
   if (!d) return null;
@@ -21,6 +22,7 @@ export default function DistrictDetail({ district: d, methodology: m, districts 
       {canCalculate ? <><div className="equation"><span>Demand contribution<br />{score(d.demandIndex)} × {m.demandWeight}</span><MetricBar value={d.demandIndex * m.demandWeight} kind="demand" /></div><div className="equation"><span>Infrastructure contribution<br />{score(d.infrastructureGap)} × {m.infrastructureGapWeight}</span><MetricBar value={d.infrastructureGap * m.infrastructureGapWeight} kind="gap" /></div><div className="equation total"><span>Final priority score<br /><small>Demand contribution + infrastructure contribution</small></span><strong>{score(d.priorityScore)}</strong></div><p className="fine">Components use rounded display values. The backend calculates the final score at full precision; displayed components may not sum exactly.</p></> : <p>Insufficient data to explain a complete score. Missing values have not been estimated.</p>}
       <h4>Relative demand note</h4><p>Demand index is normalized relative to the districts currently included. Adding requests to one district may change normalized demand scores for other districts.</p><p className="fine">{m?.normalization}</p></div>
     </div><DistrictMap districts={districts} rows={rows} selected={d.districtId} onSelect={onSelect} /></div>
+    <PlanningInsight key={'planning-' + d.districtId} districtId={d.districtId} revision={revision} />
     <div className="intelligence-bottom"><DistrictRequests key={d.districtId} districtId={d.districtId} revision={revision} /><section className="provenance"><h3>Data provenance & limitations</h3><dl>
       <dt>Demographic source</dt><dd>Census of India · Reference year: 2011</dd><dt>Infrastructure source</dt><dd>Jal Jeevan Mission · Snapshot: 21 Sep 2026</dd><dt>Citizen demand</dt><dd>Synthetic seeded requests + locally created AI demonstration requests</dd><dt>Analysis method</dt><dd>{m?.description || 'Prototype relative infrastructure-priority heuristic'}</dd>
     </dl><p>{m?.coverageData}</p><p>2011 population is historical context. Reported tap connections do not independently verify water-service functionality. Request records are demonstration data, not live public complaints.</p><strong>Not an official government ranking or policy recommendation.</strong></section></div>

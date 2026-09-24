@@ -395,7 +395,29 @@ The first database layer was verified with Prisma format/validate, migration app
 
 Gemini availability: HTTP 408, 429, 500, 502, 503 and 504, local deadlines and explicit transient transport errors receive three primary retries after 1000, 2000 and 4000 ms, each with 0–249 ms random jitter. After exhaustion, the configured fallback models are attempted once each in order (default: gemini-3.6-flash, then gemini-3.5-flash-lite). Generic errors, authentication/permission errors and invalid successful responses do not trigger switching. Each attempt retains a 30-second deadline. All models share the same instructions, input, JSON Schema and application validation. Returned `model` and saved `aiModel` identify the successful model. Configuration uses `GEMINI_FALLBACK_MODELS`; the old singular variable is no longer used. The manual `npm run smoke` command attempts English, Kannada, Hindi and a prompt-injection case independently, prints a summary, and exits nonzero after all cases if any failed. It never saves requests. Retry sleep and randomness are injectable in tests.
 
-## District Intelligence and optional Google Maps
+## Explainable water planning
+
+`GET /api/analytics/water-planning` returns the existing water-priority fields, ordering and methodology, plus each district's `planningProfile`, `planningAction`, three evidence-based rationale statements (one for incomplete data), an `evidence` object and `limitations`. It adds `planningMethodology` with the thresholds and precision rule. The original `/water-priority` contract and formula are unchanged.
+
+The flow is: **citizen text → Gemini classification → deterministic demand analytics → official-data infrastructure comparison → deterministic planning profile → explainable planning consideration**. Gemini interprets citizen text; it does **not** calculate scores, gaps, profiles, recommendations or budgets. The new read-only service reuses `getWaterPriority()` and performs no database writes or Gemini calls.
+
+Thresholds live in `backend/src/config/waterPlanning.js`. They apply to the existing display-rounded analytics values: high demand means `demandIndex >= 50`; high gap means `infrastructureGap >= 20`. Exact boundary values are high. No priority calculations are duplicated or modified.
+
+| Profile | Planning consideration |
+| --- | --- |
+| HIGH_DEMAND_HIGH_GAP | Explore targeted household water-access expansion |
+| HIGH_DEMAND_LOW_GAP | Investigate localized water-supply reliability |
+| LOW_DEMAND_HIGH_GAP | Validate potentially under-reported access needs |
+| LOW_DEMAND_LOW_GAP | Monitor coverage and maintain service quality |
+| INSUFFICIENT_DATA | Review available infrastructure data (`REVIEW_DATA`) |
+
+Incomplete analytics or invalid/missing demand, gap or coverage never produce a guessed profile. Evidence retains the analytics values, including nulls. The rule uses no district names and does not infer exact locations, construction requirements, costs, beneficiaries or timelines. Aggregate connection and demand measures cannot diagnose the cause of a service problem.
+
+District Intelligence includes **Planning Insight**, showing the backend action, rationale, evidence and limitations. It loads independently with a GET-only retry and refreshes after district selection or successful submission. The ranking table remains compact. The visible prototype label and disclaimer apply to every profile, including incomplete data.
+
+Every result notes synthetic/AI demonstration citizen demand, relative normalization, Census **2011** rural population, the configured JJM snapshot **21/09/2026**, and that reported connections do not independently establish water quantity, quality, pressure or regularity. Actual coverage provenance remains in the reused methodology response. These are prototype planning considerations, **not official government recommendations**, and require local verification.
+
+## District Intelligence and Google Maps setup
 
 Select a district using the ranking buttons to inspect its demand, reported tap coverage, historical population, weighted score explanation, recent prototype requests, and provenance. Selection stays in `Home.jsx`; map markers use the same selection state. Score contributions use the API's methodology weights. Request history and map failures do not hide the remaining analysis. AI provenance is identified only from `aiModel` or `aiProcessedAt`; marked demo text identifies seeded synthetic requests.
 
