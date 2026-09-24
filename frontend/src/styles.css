@@ -562,6 +562,8 @@ footer {
 .map-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
 .district-marker { padding: 8px 12px; border: 2px solid white; box-shadow: 0 2px 5px #17304444; }
 .map-selected { outline: 3px solid #155673; font-size: 12px; }
+.map-reference-panel { margin-top: 18px; padding: 16px; background: #fff; border: 1px solid #dce5ec; border-radius: 8px; overflow-wrap: anywhere; }
+.map-reference-panel h4 { margin: 0 0 10px; }
 .intelligence-bottom { border-top: 1px solid #dce5ec; margin-top: 25px; padding-top: 25px; }
 .request-list { list-style: none; padding: 0; margin: 0; }
 .request-list li { border: 1px solid #dce5ec; padding: 16px; border-radius: 8px; margin: 12px 0; overflow-wrap: anywhere; }

@@ -3,11 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import Home from '../src/pages/Home';
 import DistrictDetail from '../src/components/DistrictDetail';
 import DistrictMap from '../src/components/DistrictMap';
-import { loadMaps, mapsConfig } from '../src/services/maps';
+import { loadMaps, loadPlaces, mapsConfig, resolvePlaceLocation } from '../src/services/maps';
 
 vi.mock('../src/services/maps', () => ({
   mapsConfig: { key: '', mapId: '' }, loadMaps: vi.fn(),
-  hasCoordinates: d => Number.isFinite(d.latitude) && Number.isFinite(d.longitude),
+  loadPlaces: vi.fn(), resolvePlaceLocation: vi.fn(), withMapTimeout: promise => promise, MAP_LOAD_TIMEOUT_MS: 20000,
 }));
 const districts = ['Bengaluru Rural', 'Kolar', 'Mandya'].map((name, i) => ({ id: i + 1, name, state: 'Karnataka', latitude: null, longitude: null }));
 const rows = districts.map((d, i) => ({ districtId: d.id, districtName: d.name, state: d.state, ruralPopulation: 1000 + i, ruralWaterRequestCount: 2 + i, ruralWaterRequestsPer100k: 200, demandIndex: 80 - i * 10, infrastructureGap: 20, ruralFhtcCoverage: 80, priorityScore: 56 - i, priorityLevel: 'HIGH', dataCompleteness: 'COMPLETE' }));
@@ -26,7 +26,7 @@ function mockApi(failing = '') {
   }));
 }
 function detail() { return render(<DistrictDetail district={rows[0]} rows={rows} districts={districts} methodology={methodology} onSelect={vi.fn()} />); }
-beforeEach(() => { mapsConfig.key = ''; mapsConfig.mapId = ''; loadMaps.mockReset(); mockApi(); });
+beforeEach(() => { mapsConfig.key = ''; mapsConfig.mapId = ''; loadMaps.mockReset(); loadPlaces.mockReset(); resolvePlaceLocation.mockReset(); mockApi(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('District Intelligence', () => {
@@ -68,16 +68,16 @@ describe('District Intelligence', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry request history' }));
     expect(await screen.findByText('No requests recorded for this district.')).toBeTruthy();
   });
-  it('handles missing key and coordinates without loading Google', () => {
+  it('handles missing key and Place IDs without loading Google', () => {
     render(<DistrictMap districts={districts} rows={rows} selected={1} onSelect={vi.fn()} />);
     expect(screen.getByText(/Configure the Google Maps API key/)).toBeTruthy();
-    expect(screen.getByText(/Verified district coordinates unavailable for: Bengaluru Rural, Kolar, Mandya/)).toBeTruthy();
+    expect(screen.getByText(/Place IDs still needed for: Bengaluru Rural, Kolar, Mandya/)).toBeTruthy();
     expect(loadMaps).not.toHaveBeenCalled();
   });
-  it('skips Google when configured but all coordinates are missing', () => {
+  it('skips Google when configured but all Place IDs are missing', () => {
     mapsConfig.key = 'mock-key'; mapsConfig.mapId = 'mock-map';
     render(<DistrictMap districts={districts} rows={rows} selected={1} onSelect={vi.fn()} />);
-    expect(screen.getByText('The selected district has no verified map position.')).toBeTruthy();
+    expect(screen.getByText('No Place ID configured for this reference.')).toBeTruthy();
     expect(loadMaps).not.toHaveBeenCalled();
   });
   it('handles missing Map ID', () => {
@@ -98,14 +98,17 @@ describe('District Intelligence', () => {
       removeEventListener() {}
     }
     loadMaps.mockResolvedValue({ Map, LatLngBounds: Bounds, AdvancedMarkerElement: Marker });
-    // Deliberately fictional unit-test coordinates, never application data.
-    const points = districts.map((d, i) => ({ ...d, latitude: i + 1, longitude: i + 2 }));
+    // Synthetic Place IDs and locations are confined to this mocked test.
+    const points = districts;
+    const references = districts.map((d, i) => ({ districtName: d.name, state: d.state, mapPlaceId: 'mock-' + i, mapReferenceLabel: d.name + ' reference' }));
+    loadPlaces.mockResolvedValue(class Place {});
+    resolvePlaceLocation.mockImplementation(async (_, id) => ({ lat: Number(id.slice(-1)) + 1, lng: Number(id.slice(-1)) + 2 }));
     const onSelect = vi.fn();
-    const view = render(<DistrictMap districts={points} rows={rows} selected={1} onSelect={onSelect} />);
+    const view = render(<DistrictMap references={references} districts={points} rows={rows} selected={1} onSelect={onSelect} />);
     await waitFor(() => expect(markers).toHaveLength(3));
-    expect(markers[0].title).toContain('Bengaluru Rural: HIGH; score 56.00; JJM coverage 80.00%; rural water requests 2');
+    expect(markers[0].title).toContain('Bengaluru Rural district headquarters reference; Bengaluru Rural reference; HIGH; score 56.00; JJM coverage 80.00%; rural WATER requests 2');
     markers[1].click(); expect(onSelect).toHaveBeenCalledWith(2);
-    view.rerender(<DistrictMap districts={points} rows={rows} selected={2} onSelect={onSelect} />);
+    view.rerender(<DistrictMap references={references} districts={points} rows={rows} selected={2} onSelect={onSelect} />);
     expect(panTo).toHaveBeenLastCalledWith({ lat: 2, lng: 3 });
     expect(markers[1].element.classList.contains('map-selected')).toBe(true);
     expect(loadMaps).toHaveBeenCalledTimes(1);
@@ -114,9 +117,9 @@ describe('District Intelligence', () => {
   it('isolates map loading errors', async () => {
     mapsConfig.key = 'mock-key'; mapsConfig.mapId = 'mock-map';
     loadMaps.mockRejectedValue(new Error('Mock map unavailable'));
-    render(<DistrictDetail district={rows[0]} rows={rows} districts={[{ ...districts[0], latitude: 1, longitude: 2 }]} methodology={methodology} onSelect={vi.fn()} />);
+    render(<DistrictMap districts={districts} rows={rows} selected={1} references={[{ districtName: districts[0].name, state: 'Karnataka', mapPlaceId: 'mock-id' }]} onSelect={vi.fn()} />);
     await screen.findByText(/Google Maps could not be loaded/);
-    expect(screen.getByRole('heading', { name: 'Why this district has this score' })).toBeTruthy();
+    expect(screen.getByText(/not citizen complaint locations or exact district centroids/)).toBeTruthy();
   });
   it.each([['/districts', 'Retry districts'], ['/water-priority', 'Retry analytics']])('isolates %s failure', async (path, retry) => {
     mockApi(path); render(<Home />);

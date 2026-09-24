@@ -421,18 +421,48 @@ Every result notes synthetic/AI demonstration citizen demand, relative normaliza
 
 Select a district using the ranking buttons to inspect its demand, reported tap coverage, historical population, weighted score explanation, recent prototype requests, and provenance. Selection stays in `Home.jsx`; map markers use the same selection state. Score contributions use the API's methodology weights. Request history and map failures do not hide the remaining analysis. AI provenance is identified only from `aiModel` or `aiProcessedAt`; marked demo text identifies seeded synthetic requests.
 
-Maps uses `@googlemaps/js-api-loader` v2 `setOptions`/`importLibrary` and `AdvancedMarkerElement`. Follow the [Google Maps JavaScript setup](https://developers.google.com/maps/documentation/javascript/load-maps-js-api) and [Advanced Markers setup](https://developers.google.com/maps/documentation/javascript/advanced-markers/start):
+Maps uses `@googlemaps/js-api-loader` v2 `setOptions`/`importLibrary`, the `maps`, `marker`, `places` libraries (and `core` for bounds), and `AdvancedMarkerElement`. No legacy Marker or automatic geocoding is used. See [Google Place Details](https://developers.google.com/maps/documentation/javascript/place-details) and [Advanced Markers setup](https://developers.google.com/maps/documentation/javascript/advanced-markers/start).
 
-1. Enable Maps JavaScript API in your Google Cloud project and configure its required billing.
-2. Create a browser API key. Apply website/HTTP referrer restrictions for your allowed local and deployed origins, and API restrictions permitting **Maps JavaScript API** only.
-3. Create a JavaScript Map ID for Advanced Markers.
-4. Add `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` only to ignored `frontend/.env`, then restart Vite. The committed example leaves both blank. Do not reuse the backend Gemini key or commit real configuration values.
+1. Enable **Maps JavaScript API** and **Places API (New)** in your Google Cloud project with billing configured.
+2. Create a browser API key with website/HTTP referrer restrictions for your permitted development and deployed origins. Restrict API access to Maps JavaScript API and Places API (New).
+3. Create a JavaScript Map ID. This application requires an explicit Map ID in development and production; it does not silently fall back to DEMO_MAP_ID. Production should always use a real project Map ID.
+4. Configure `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` in ignored `frontend/.env`, then restart Vite. Do not reuse GEMINI_API_KEY or database credentials. The committed example remains blank.
 
-A Maps browser key is public in the delivered browser bundle; restrictions are essential. `VITE_API_BASE_URL` remains the only backend URL configuration. Without a Maps key or Map ID, the panel displays a setup message and the rest of the dashboard works.
+Browser Maps keys are public in the delivered bundle and must be restricted. `VITE_API_BASE_URL` remains the only backend URL configuration. Missing credentials, missing reference IDs, Maps load/authentication failure, Places library failure and individual Place Details failures have separate UI states. One failed reference does not prevent others from rendering. No credentials or raw Google error objects are printed by application code.
 
-All eight districts currently return null latitude/longitude: Bengaluru Urban, Bengaluru Rural, Mysuru, Mandya, Tumakuru, Hassan, Kolar and Ramanagara. The panel names missing locations and makes no Maps request until at least one valid coordinate is available. No coordinates are invented, geocoded or written to the database. When verified points become available, the initial map fits those Karnataka district points and selection pans without changing zoom. Markers represent district analysis, never complaint locations.
+### Manually acquire and validate the eight Place IDs
 
-Frontend tests mock HTTP and the Maps layer; they never call Google or write records. Census 2011 is historical demographic context, JJM coverage is reported through 21 Sep 2026, and citizen demand remains synthetic/AI demonstration data. This is not an official ranking or policy recommendation.
+The eight reference entries live in `frontend/src/config/districtMapReferences.js`. This is a small map-only configuration, separate from source-linked District records: no schema migration or API contract change is needed. Each tuple is **[exact dataset district name, our own reference label, Place ID or null]**. All IDs currently remain null because no Maps credentials are configured. Labels describe intended search targets, not already verified Google results.
+
+Use the [official Place ID Finder](https://developers.google.com/maps/documentation/places/web-service/place-id) or [Places Text Search (New)](https://developers.google.com/maps/documentation/javascript/place-search) manually. Search the following targets, reviewing each result individually; never take the first result automatically or fuzzy-match dataset names:
+
+| Dataset district | Search target in Karnataka, India |
+| --- | --- |
+| Bengaluru Urban | Bengaluru city headquarters reference |
+| Bengaluru Rural | Deputy Commissioner's district office, Beerasandra, Devanahalli |
+| Mysuru | Mysuru city headquarters reference |
+| Mandya | Mandya city headquarters reference |
+| Tumakuru | Tumakuru city headquarters reference |
+| Hassan | Hassan city headquarters reference |
+| Kolar | Kolar city headquarters reference |
+| Ramanagara | Ramanagara city headquarters reference |
+
+For Bengaluru Rural, check the [district administration office address](https://bangalorerural.nic.in/en/whos-who-en/) and choose its identifiable administrative office reference rather than a similarly named Bengaluru city result.
+
+Before storing each selected ID:
+
+1. Inspect the result's display name and formatted address. Confirm the intended city/administrative office, Karnataka, India, and a nonempty Place ID. For Text Search, request `id`, `displayName`, and `formattedAddress`; inspect candidates manually. Use a map inspection or official office address to resolve ambiguity; leave null if uncertain.
+2. Replace only that tuple's null with the exact selected Place ID, and write an application-authored reference label if necessary. Store only the ID and our metadata, **not** Google-returned names, formatted addresses, locations or search responses. IDs are not API secrets. Do not copy an example ID from Google documentation.
+3. Run frontend tests and build. The mapping validator checks exactly eight known Karnataka dataset names, unique district entries, unique nonempty IDs, and permitted metadata fields. It rejects extra coordinate fields. These structural checks do not certify a real place's identity; human verification above is required.
+4. Reload the configured map and manually inspect each reference. Select Bengaluru Rural, Mysuru, Mandya and Ramanagara from both the ranking and markers. Confirm the panel label and regional position before treating the mapping as verified.
+
+At runtime the Places library creates `new Place({ id })` and requests only `location` with `fetchFields`; our labels already supply the panel text. The returned location is passed directly to AdvancedMarkerElement and bounds/pan operations. It stays in component memory only—no database, CSV, localStorage or persistent coordinate cache. Selected-district or analytics changes update marker styling/pan without fetching Place Details again; remount, dataset refresh or explicit retry can resolve again. Library loads are bounded at 20 seconds and individual detail requests at 10 seconds. Timed-out SDK operations are ignored if they later finish.
+
+Map markers represent **district headquarters/reference locations**, not complaints, exact district centroids or infrastructure project sites. Existing database latitude/longitude fields are not used as a fallback and are not modified. The initial view fits resolved references; selection pans without changing zoom. Missing IDs and failed resolutions are named visibly.
+
+The dataset continues to call the district **Ramanagara**. Its selected-reference panel explains **Bengaluru South (renamed in 2025)**, with Ramanagara still the headquarters, citing the [district administration history](https://ramanagara.nic.in/en/history/). No Census/JJM-linked district name or provenance is changed.
+
+All automated map tests mock the Google loader/Places/markers, including partial failure and selection. No real Maps or Gemini calls or citizen-request writes occur in tests. Census 2011, JJM through 21 Sep 2026, and synthetic/AI demonstration demand remain prototype context, not official policy recommendations.
 
 ## Citizen request preview and submission flow
 
