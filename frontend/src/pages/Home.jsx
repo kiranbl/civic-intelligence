@@ -1,3 +1,4 @@
+import CitizenRequestForm from '../components/CitizenRequestForm';
 import { useEffect, useState } from 'react';
 import { loadDashboard } from '../services/api';
 import { number } from '../components/format';
@@ -6,16 +7,19 @@ import DistrictDetail from '../components/DistrictDetail';
 import DataMethodology from '../components/DataMethodology';
 export default function Home() {
   const [data, setData] = useState(null), [status, setStatus] = useState('loading'), [revision, setRevision] = useState(0), [selected, setSelected] = useState(null);
+  const [refreshError, setRefreshError] = useState(false);
   useEffect(() => {
-    const controller = new AbortController(); setStatus('loading');
-    loadDashboard(controller.signal).then(value => { if (!controller.signal.aborted) { setData(value); setSelected(value.analytics.data[0]?.districtId ?? null); setStatus('ready'); } }).catch(() => { if (!controller.signal.aborted) setStatus('error'); });
+    const controller = new AbortController(); setStatus(previous => previous === 'ready' ? 'ready' : 'loading'); setRefreshError(false);
+    loadDashboard(controller.signal).then(value => { if (!controller.signal.aborted) { setData(value); setSelected(value.analytics.data[0]?.districtId ?? null); setStatus('ready'); } }).catch(() => { if (!controller.signal.aborted) { setRefreshError(true); setStatus(previous => previous === 'ready' ? 'ready' : 'error'); } });
     return () => controller.abort();
   }, [revision]);
   return <><header className="site-header"><div className="brand"><span className="brand-icon" aria-hidden="true">CI</span><div><h1>Civic Intelligence</h1><p>AI-assisted infrastructure planning from citizen demand and public data</p></div></div><span className={'connection ' + (status === 'ready' && data.connected ? 'online' : '')}><i />{status === 'loading' ? 'Checking connection…' : status === 'ready' && data.connected ? 'Backend connected' : 'Backend connection unavailable'}</span></header>
     <main><div className="intro"><div><p className="eyebrow">KARNATAKA · RURAL WATER</p><h2>Public data. Clearer priorities.</h2><p>Citizen demand + demographic context + infrastructure coverage</p></div><span className="prototype">PROTOTYPE / DEMONSTRATION</span></div>
     {status === 'loading' && <div className="card state" role="status">Loading civic infrastructure data...</div>}
     {status === 'error' && <div className="card state" role="alert"><h2>Data is temporarily unavailable</h2><p>We couldn't load the Civic Intelligence data. Check that the backend is running and try again.</p><button className="retry" onClick={() => setRevision(r => r + 1)}>Retry</button></div>}
-    {status === 'ready' && <><section className="summary" aria-label="Dataset overview">{[
+    {status === 'ready' && <><CitizenRequestForm districts={data.districts} onSubmitted={() => setRevision(r => r + 1)} />
+    {refreshError && <div className="notice" role="alert">Dashboard refresh failed. Your submitted request has not been resubmitted. <button onClick={() => setRevision(r => r + 1)}>Retry dashboard refresh</button></div>}
+    <section className="summary" aria-label="Dataset overview">{[
       ['Districts', number(data.districts.length), 'Districts in the dataset'], ['Citizen Requests', number(data.requestCount), 'Prototype citizen-demand dataset'], ['Demographic Context', '2011', 'Census of India'], ['Infrastructure Snapshot', '21 Sep 2026', 'Jal Jeevan Mission'],
     ].map(([label,value,note]) => <article className="card summary-card" key={label}><h3>{label}</h3><strong>{value}</strong><p>{note}</p></article>)}</section>
     {data.requestCount === null && <div className="notice" role="status">Some district requests could not be loaded. The total is unavailable. <button onClick={() => setRevision(r => r + 1)}>Retry data</button></div>}

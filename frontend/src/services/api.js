@@ -15,3 +15,42 @@ export async function loadDashboard(signal) {
   return { connected: health.status === 'fulfilled', districts: districts.value.data, analytics: analytics.value,
     requestCount: requests.every(r => r.status === 'fulfilled') ? requests.reduce((sum, r) => sum + r.value.data.length, 0) : null };
 }
+
+// The backend owns model retries. One browser action sends one POST only.
+// Six backend attempts can take over three minutes, so allow the full budget.
+async function post(path, body, expectedStatus) {
+  let response;
+  try {
+    response = await fetch(baseUrl + path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(210000),
+    });
+  } catch {
+    throw new Error(expectedStatus === 201
+      ? 'Submission could not be confirmed. Check the district request records before trying again to avoid a duplicate.'
+      : 'Could not reach the backend. Check your connection and try again.');
+  }
+  if (response.status !== expectedStatus) {
+    const messages = {
+      400: 'Please check the selected district and request text.',
+      404: 'The selected district is unavailable. Refresh the dashboard and select a district again.',
+      413: 'The request is too long. Please use no more than 5,000 characters.',
+      429: 'The AI service is temporarily busy. Please try again.',
+      503: 'The AI service is temporarily busy. Please try again.',
+      504: 'The AI service is temporarily busy. Please try again.',
+      502: 'The AI service could not interpret this request. Please review the text and try again.',
+    };
+    throw new Error(messages[response.status] || 'The request could not be completed. Please try again later.');
+  }
+  try {
+    const result = await response.json();
+    if (!result.success || !result.data) throw new Error();
+    return result.data;
+  } catch {
+    throw new Error(expectedStatus === 201
+      ? 'Submission could not be confirmed. Check the district request records before trying again to avoid a duplicate.'
+      : 'The analysis response could not be read. Please try again.');
+  }
+}
+export const analyzeRequest = text => post('/citizen-requests/analyze', { text }, 200);
+export const submitRequest = (districtId, text) => post('/citizen-requests', { districtId, text, channel: 'TEXT' }, 201);

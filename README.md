@@ -9,7 +9,7 @@ Built for the Google Build with AI: Code for Communities hackathon. The intended
 This repository contains the application scaffold and first database layer:
 
 - React + Vite frontend in JavaScript, using React Router and plain CSS.
-- Read-only rural water dashboard with dynamic totals, district ranking and score explanations.
+- Rural water dashboard with dynamic totals, district ranking, score explanations, and an explicit analyze/review/submit citizen-request flow.
 - Node.js + Express API with dotenv, cors, JSON parsing, and centralized error handling.
 - Prisma ORM configured for MySQL with District, CitizenRequest, and InfrastructureMetric models.
 - Read-only district, citizen request, and infrastructure endpoints.
@@ -394,3 +394,11 @@ The first database layer was verified with Prisma format/validate, migration app
 - At installation, the frontend audit reported zero vulnerabilities. The backend audit reported three high-severity findings along the `prisma` -> `@prisma/config` -> `deepmerge-ts` dependency chain, arising from [GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). This remains unresolved. npm suggested downgrading Prisma to 6.12.0; no forced downgrade or unverified transitive override was applied.
 
 Gemini availability: HTTP 408, 429, 500, 502, 503 and 504, local deadlines and explicit transient transport errors receive three primary retries after 1000, 2000 and 4000 ms, each with 0–249 ms random jitter. After exhaustion, the configured fallback models are attempted once each in order (default: gemini-3.6-flash, then gemini-3.5-flash-lite). Generic errors, authentication/permission errors and invalid successful responses do not trigger switching. Each attempt retains a 30-second deadline. All models share the same instructions, input, JSON Schema and application validation. Returned `model` and saved `aiModel` identify the successful model. Configuration uses `GEMINI_FALLBACK_MODELS`; the old singular variable is no longer used. The manual `npm run smoke` command attempts English, Kannada, Hindi and a prompt-injection case independently, prints a summary, and exits nonzero after all cases if any failed. It never saves requests. Retry sleep and randomness are injectable in tests.
+
+## Citizen request preview and submission
+
+The dashboard includes a two-step demonstration form. Choose a district, enter up to 5,000 JavaScript string characters, and select **Analyze Request**. This calls `/api/citizen-requests/analyze` without saving. English, Kannada and Hindi examples only populate the textarea. Review the interpretation before selecting **Submit Request**. Editing text invalidates the preview; changing district uses the latest explicit selection.
+
+Submission sends only `districtId`, reviewed `text` and `channel: TEXT` to the existing create endpoint. The backend reanalyzes and validates the text; the final stored result may differ and is displayed explicitly. After HTTP 201 the dashboard reloads its district requests, totals and analytics without a full-page refresh. A failed dashboard refresh preserves the saved confirmation and offers a GET-only refresh. Browser retries are manual; ambiguous submission network failures warn users to check records before retrying, because the API does not provide idempotency keys.
+
+Run frontend checks with `cd frontend`, `npm test`, and `npm run build`. Vitest/jsdom component tests and the existing Node API-loader tests mock all HTTP calls, including Gemini-backed analysis and request creation. No real records are written by these tests. `VITE_API_BASE_URL` remains the only browser backend URL setting; credentials belong exclusively to the backend.
