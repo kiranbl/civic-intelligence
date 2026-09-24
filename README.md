@@ -9,7 +9,7 @@ Built for the Google Build with AI: Code for Communities hackathon. The intended
 This repository contains the application scaffold and first database layer:
 
 - React + Vite frontend in JavaScript, using React Router and plain CSS.
-- One Home page with the project name and tagline.
+- Read-only rural water dashboard with dynamic totals, district ranking and score explanations.
 - Node.js + Express API with dotenv, cors, JSON parsing, and centralized error handling.
 - Prisma ORM configured for MySQL with District, CitizenRequest, and InfrastructureMetric models.
 - Read-only district, citizen request, and infrastructure endpoints.
@@ -17,7 +17,7 @@ This repository contains the application scaffold and first database layer:
 - Validated Census 2011 district population import with source/year provenance.
 - Backend HTTP tests using Node's built-in test runner.
 
-Gemini now structures multilingual citizen requests. Google Maps, authentication, dashboards, audio processing, and Google Cloud deployment remain deferred.
+Gemini now structures multilingual citizen requests. Google Maps, authentication, audio processing, and Google Cloud deployment remain deferred.
 
 ## Requirements
 
@@ -87,7 +87,7 @@ PORT=3000
 DATABASE_URL="mysql://USER:PASSWORD@localhost:3306/civic_intelligence"
 ```
 
-Replace the database placeholders in your local `backend/.env` with your MySQL credentials. The health endpoint does not query MySQL. Local `.env` files are ignored by Git; commit only placeholder examples. Frontend `VITE_` variables are public browser configuration and must never contain secrets. `VITE_API_URL` is provided for later API calls and is not consumed by the Home page.
+Replace the database placeholders in your local `backend/.env` with your MySQL credentials. The health endpoint does not query MySQL. Local `.env` files are ignored by Git; commit only placeholder examples. Frontend `VITE_` variables are public browser configuration and must never contain secrets. `VITE_API_BASE_URL` is the dashboard’s only backend URL setting (default `http://localhost:3000/api`). Set it in `frontend/.env` when using another API address; restart Vite after changing it. The old `VITE_API_URL` setting is not used.
 
 From `backend/`, apply the committed migration, generate the client, and seed:
 
@@ -167,7 +167,7 @@ Verification: the eight dry-run results matched an independent workbook inspecti
 | GET | `/api/districts/:id/requests` | That district's requests, newest first |
 | GET | `/api/districts/:id/infrastructure` | That district's infrastructure metrics |
 
-Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. District routes remain read-only; citizen-request submission is a separate endpoint. No frontend data pages are implemented.
+Successful district responses use `{ "success": true, "data": ... }`. Collections return arrays, including an empty array when an existing district has no matching records. IDs must be positive decimal integers without leading zeros and within the MySQL signed Int range. Invalid IDs return HTTP 400, and unknown districts return HTTP 404 on all three ID-based routes. Database failures go through the centralized handler and return a generic HTTP 500 without exposing Prisma details. District routes remain read-only; citizen-request submission is a separate endpoint. The Home dashboard consumes these read-only APIs.
 
 ## Rural water-priority analytics
 
