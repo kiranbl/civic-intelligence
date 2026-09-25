@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "bootstrap:production": "node scripts/bootstrap/production.js",
+    "start:production": "prisma migrate deploy && npm run bootstrap:production && npm start",
     "test": "node --test",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",

@@ -1,4 +1,4 @@
-const baseUrl = (import.meta.env?.VITE_API_BASE_URL || 'http://localhost:3000/api').replace(/\/$/, '');
+const baseUrl = (import.meta.env?.VITE_API_BASE_URL || (import.meta.env?.PROD ? '/api' : 'http://localhost:3000/api')).replace(/\/$/, '');
 async function get(path, signal) {
   const response = await fetch(baseUrl + path, { signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
   if (!response.ok) throw new Error('Data unavailable');

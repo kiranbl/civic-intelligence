@@ -236,7 +236,7 @@ totalReportedRuralHouseholds = H + U
 ruralFhtcCoverage = C / (H + U) * 100
 ```
 
-The denominator includes households in non-PWS villages; it is not Census population or PWS households alone. A positive denominator, nonnegative integer counts, C <= H and C <= H + U, and coverage within 0–100 are required. A future nonzero P requires a methodological decision and cannot be imported by this script. Values remain full-precision JavaScript numbers internally and in database writes; the printed table and processed CSV round percentages to two decimals. The CSV is a reporting extract, not the input to the importer.
+The denominator includes households in non-PWS villages; it is not Census population or PWS households alone. A positive denominator, nonnegative integer counts, C <= H and C <= H + U, and coverage within 0–100 are required. A future nonzero P requires a methodological decision and cannot be imported by this script. Values remain full-precision JavaScript numbers internally and in database writes; the printed table and processed CSV round percentages to two decimals. The raw-source importer does not read this reporting CSV. Production bootstrap separately uses its validated household counts to recover full-precision coverage, as described below.
 
 Source date **2026-09-21** comes explicitly from J5. J1 itself has no date; matching J1/J5 household and connection totals reconciles this supplied pair without inventing a separate J1 timestamp. The metric represents **JJM-reported rural household tap-connection coverage as of 21/09/2026**, not independently verified water-service functionality. Matching totals do not certify water quantity, quality, or regularity. Census 2011 rural population remains historical context; current administrative boundary compatibility is not established by matching names alone. Citizen requests remain fictional/synthetic demo data.
 
@@ -363,7 +363,7 @@ Invoke-RestMethod http://localhost:3000/api/health
 
 This checks that the API is running; it does not check MySQL connectivity. The endpoint accepts no user inputs. JSON parsing rejects malformed or oversized bodies, and future input-bearing endpoints must add explicit validation.
 
-Unknown routes return a JSON 404. The centralized error handler returns safe JSON messages without exposing internal error details. CORS uses its default permissive configuration for local development; configure the intended frontend origin when deployment is requested.
+Unknown routes return a JSON 404. The centralized error handler returns safe JSON messages without exposing internal error details. CORS defaults to the two local Vite origins and uses an exact environment-configured allowlist in production; see deployment preparation below.
 
 ## Checks
 
@@ -455,3 +455,84 @@ The dashboard includes a two-step demonstration form. Choose a district, enter u
 Submission sends only `districtId`, reviewed `text` and `channel: TEXT` to the existing create endpoint. The backend reanalyzes and validates the text; the final stored result may differ and is displayed explicitly. After HTTP 201 the dashboard reloads its district requests, totals and analytics without a full-page refresh. A failed dashboard refresh preserves the saved confirmation and offers a GET-only refresh. Browser retries are manual; ambiguous submission network failures warn users to check records before retrying, because the API does not provide idempotency keys.
 
 Run frontend checks with `cd frontend`, `npm test`, and `npm run build`. Vitest/jsdom component tests and the existing Node API-loader tests mock all HTTP calls, including Gemini-backed analysis and request creation. No real records are written by these tests. `VITE_API_BASE_URL` remains the only browser backend URL setting; credentials belong exclusively to the backend.
+
+## Deployment preparation: Aiven → Render → Vercel
+
+This is configuration and bootstrap preparation only; nothing has been deployed. Keep the existing schema/migrations, Gemini models, analytics, map, and source data. Use Node 24 (at least 22.12) for both builds. Do not copy local MySQL or run the development demo seed in production.
+
+### Aiven MySQL and backend environment
+
+Provision an empty MySQL database separately when deployment is authorized. Aiven supplies the host, port, database, username, password and project CA certificate; none is hardcoded. Supply Render with:
+
+| Backend environment | Required value |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | Aiven MySQL connection URL, with strict TLS as below |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated exact HTTPS frontend origins; no path or trailing slash |
+| `GEMINI_API_KEY` | Backend-only secret from your own Gemini account |
+| `GEMINI_MODEL` | Your chosen primary model (existing default `gemini-3.8-flash`) |
+| `GEMINI_FALLBACK_MODELS` | Existing ordered defaults `gemini-3.6-flash,gemini-3.5-flash-lite`, or your explicit model configuration |
+| `PORT` | Supplied by Render; do not set it to the local development port |
+
+Prisma **6.19.3** uses `DATABASE_URL` from `schema.prisma`. The placeholder format is:
+
+```dotenv
+DATABASE_URL="mysql://USER:PASSWORD@HOST:PORT/DATABASE?sslcert=/etc/secrets/aiven-ca.pem&sslaccept=strict"
+CORS_ALLOWED_ORIGINS=https://FRONTEND-HOST
+```
+
+Percent-encode special characters in URL credentials. Download the CA for **your Aiven project**, then supply it as a Render secret file named `aiven-ca.pem`, available at `/etc/secrets/aiven-ca.pem`; do not commit certificates or credentials. Use the Aiven DNS hostname so certificate identity validation can succeed. `sslcert` supplies the trusted server CA and `sslaccept=strict` keeps validation enabled; do not substitute `accept_invalid_certs` or another driver's `ssl-mode` URL parameter. If TLS fails, correct the CA/hostname rather than disabling validation. The same URL and CA must be available to migration, bootstrap and runtime processes. See [Prisma 6 MySQL TLS parameters](https://docs.prisma.io/docs/orm/v6/overview/databases/mysql), [Aiven certificates](https://aiven.io/docs/platform/concepts/tls-ssl-certificates), and [Render secret files](https://render.com/docs/configure-environment-variables#secret-files).
+
+CORS accepts only exact configured origins. Production startup rejects missing/invalid configuration; preview domains must be listed explicitly rather than allowing every Vercel subdomain. Without configuration, development permits `http://localhost:5173` and `http://127.0.0.1:5173`. Requests without an Origin header remain allowed for health checks/server clients. CORS is browser access control, not authentication. No Gemini or database credential belongs in a `VITE_` variable.
+
+### Render backend commands
+
+Use a Node web service with **Root Directory `backend`**:
+
+```text
+Build: npm ci --include=dev && npx prisma generate
+Start: npm run start:production
+Health check: /api/health
+```
+
+The explicit `--include=dev` retains the pinned Prisma CLI for production migrations, even with `NODE_ENV=production`. `start:production` expands to:
+
+```sh
+prisma migrate deploy && npm run bootstrap:production && npm start
+```
+
+Inside npm scripts, `prisma` resolves to the installed CLI; the equivalent manual sequence starts with `npx prisma migrate deploy`. Any migration/bootstrap failure stops startup. Never use `prisma migrate dev`, `prisma migrate reset`, `prisma db push`, or destructive database commands for this sequence. Server startup binds `0.0.0.0` and honors `process.env.PORT` (3000 is only the local fallback), matching [Render's port requirements](https://render.com/docs/web-services#port-binding). The unchanged health response does not query Gemini or write/query the database.
+
+### Safe baseline bootstrap
+
+`npm run bootstrap:production` assumes migrations already exist and reads only repository-controlled data:
+
+- The original `[DEMO ONLY ...]` fixtures in `prisma/demoData.js`: four requests per district, 32 total; no local AI demonstration records are copied.
+- `data/processed/census2011-karnataka-population.csv`: official Total/Rural/Urban values and shared Census 2011 provenance.
+- `data/processed/jjm-karnataka-rural-coverage-2026-09-21.csv`: previously validated J1/J5 extract, dated 21/09/2026, FY 2026-2027. Coverage is recomputed as `tapConnectedHouseholds / (pwsHouseholds + nonPwsUnconnectedHouseholds) * 100`, preserving full precision; the rounded CSV column is only a cross-check. The extract was generated after J1/J5 reconciliation and zero-private-connection validation; bootstrap does not claim to revalidate absent raw reports. Existing official source constants supply `sourceUrl`, `sourceYear`, date and unit.
+
+It validates headers, eight unique targets, historical aliases, numeric counts, Rural + Urban = Total, household totals, display coverage, dates and provenance before a database transaction. Ignored raw workbooks/exports are **not required**. Preserve these small tracked extracts when deploying; later source updates require an explicit reviewed data migration, not editing this baseline to repair a live database.
+
+All three application tables must be empty to initialize (Prisma migration metadata does not count). A serializable transaction creates **8 districts, 32 synthetic requests and 8 official JJM metrics**, verifies the resulting baseline, and rolls back on failure. Fictional fixture populations/coverage are never inserted. No AI calls or copies of local requests 33/34 are involved. IDs remain database-generated; future submissions may naturally receive IDs 33 onward.
+
+On restart it verifies every baseline district/population/provenance, all 32 exact synthetic requests and exactly one matching official rural coverage metric per district. Correctly initialized data causes **zero writes**, even after extra user/demo requests or unrelated metric types are added. IDs, timestamps and additional records are preserved. Missing, duplicate, altered, partially initialized or inconsistent baselines stop with an explicit error; nothing is deleted, overwritten, reset or repaired. Run one initializer at a time. A concurrent serializable conflict fails safely; rerun after the other initializer completes. This command is not a general synchronization/import tool.
+
+### Vercel frontend
+
+Use **Root Directory `frontend`**, Vite preset, install `npm ci`, build `npm run build`, output `dist`. The only application environment setting is:
+
+```dotenv
+VITE_API_BASE_URL=https://BACKEND-HOST/api
+```
+
+Set this to the authorized Render HTTPS URL for each Vercel environment before building. Production builds fail for missing, localhost, non-HTTPS, or credential-bearing URLs. The development server keeps its localhost default. The frontend uses a build-time value, so rebuild when changing it; see [Vercel Vite configuration](https://vercel.com/docs/frameworks/frontend/vite). Add the corresponding Vercel origin to Render's CORS allowlist. Leaflet/OSM needs no deployment secret; retain visible attribution. No hosting configuration is needed for extra routes because the current application serves only `/`.
+
+For a local production **build check only**, a process-specific, non-live placeholder URL can be used without altering `.env`:
+
+```powershell
+$env:VITE_API_BASE_URL = 'https://backend.example.invalid/api'
+npm run build
+Remove-Item Env:VITE_API_BASE_URL
+```
+
+That example build is not a deployable backend configuration. Configure the actual authorized backend URL in Vercel later. Census remains historical **2011** context, JJM reports connections through **21/09/2026**, and baseline citizen requests remain fictional. All scores/planning insights remain prototype demonstrations.

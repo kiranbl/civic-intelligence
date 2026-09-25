@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { corsOptions } from './config/cors.js';
 import healthRoutes from './routes/health.routes.js';
 import districtRoutes from './routes/district.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
@@ -8,7 +9,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
-app.use(cors());
+app.use(cors(corsOptions()));
 app.use(express.json({ limit: '100kb' }));
 
 app.use('/api/health', healthRoutes);
