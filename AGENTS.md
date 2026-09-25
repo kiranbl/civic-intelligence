@@ -12,7 +12,7 @@ The goal is to build a multilingual AI platform that analyses citizen developmen
 - Backend: Node.js + Express.
 - Database: MySQL with Prisma ORM.
 - AI: Google Gemini API for citizen-request understanding.
-- Maps: Google Maps, to be added later.
+- Maps: Leaflet + React Leaflet with OpenStreetMap tiles.
 - Deployment: Google Cloud, to be added later.
 
 ## Development rules

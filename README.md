@@ -17,7 +17,7 @@ This repository contains the application scaffold and first database layer:
 - Validated Census 2011 district population import with source/year provenance.
 - Backend HTTP tests using Node's built-in test runner.
 
-Gemini now structures multilingual citizen requests. The District Intelligence view includes optional Google Maps integration. Authentication, audio processing, and Google Cloud deployment remain deferred.
+Gemini now structures multilingual citizen requests. The District Intelligence view includes Leaflet and OpenStreetMap integration. Authentication, audio processing, and Google Cloud deployment remain deferred.
 
 ## Requirements
 
@@ -417,52 +417,36 @@ District Intelligence includes **Planning Insight**, showing the backend action,
 
 Every result notes synthetic/AI demonstration citizen demand, relative normalization, Census **2011** rural population, the configured JJM snapshot **21/09/2026**, and that reported connections do not independently establish water quantity, quality, pressure or regularity. Actual coverage provenance remains in the reused methodology response. These are prototype planning considerations, **not official government recommendations**, and require local verification.
 
-## District Intelligence and Google Maps setup
+## District Intelligence mapping
 
-Select a district using the ranking buttons to inspect its demand, reported tap coverage, historical population, weighted score explanation, recent prototype requests, and provenance. Selection stays in `Home.jsx`; map markers use the same selection state. Score contributions use the API's methodology weights. Request history and map failures do not hide the remaining analysis. AI provenance is identified only from `aiModel` or `aiProcessedAt`; marked demo text identifies seeded synthetic requests.
+The supplementary map uses **Leaflet + React Leaflet** and OpenStreetMap raster tiles. It requires no API key, billing account, or Google Maps configuration. Gemini remains the backend AI provider and its configuration is unchanged.
 
-Maps uses `@googlemaps/js-api-loader` v2 `setOptions`/`importLibrary`, the `maps`, `marker`, `places` libraries (and `core` for bounds), and `AdvancedMarkerElement`. No legacy Marker or automatic geocoding is used. See [Google Place Details](https://developers.google.com/maps/documentation/javascript/place-details) and [Advanced Markers setup](https://developers.google.com/maps/documentation/javascript/advanced-markers/start).
+Select a ranking button or map marker to update District Intelligence. Initial bounds show all configured references, with zoom capped at 9 for the initial fit; later selections pan without changing zoom. Popups show district name, reference label, priority, score, coverage and rural WATER count. Marker letters and a selected star supplement priority colors. The ranking remains keyboard-accessible navigation when mapping is unavailable.
 
-1. Enable **Maps JavaScript API** and **Places API (New)** in your Google Cloud project with billing configured.
-2. Create a browser API key with website/HTTP referrer restrictions for your permitted development and deployed origins. Restrict API access to Maps JavaScript API and Places API (New).
-3. Create a JavaScript Map ID. This application requires an explicit Map ID in development and production; it does not silently fall back to DEMO_MAP_ID. Production should always use a real project Map ID.
-4. Configure `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` in ignored `frontend/.env`, then restart Vite. Do not reuse GEMINI_API_KEY or database credentials. The committed example remains blank.
+### Verified district reference coordinates
 
-Browser Maps keys are public in the delivered bundle and must be restricted. `VITE_API_BASE_URL` remains the only backend URL configuration. Missing credentials, missing reference IDs, Maps load/authentication failure, Places library failure and individual Place Details failures have separate UI states. One failed reference does not prevent others from rendering. No credentials or raw Google error objects are printed by application code.
+Coordinates are checked-in frontend data in `frontend/src/config/districtLocations.js`, **not MySQL data**. Verified against OpenStreetMap on **2026-09-25** using individually reviewed Nominatim results and an Overpass office lookup. These are headquarters/geographic reference points, **not complaint locations, infrastructure projects, or exact district centroids**. No complaint coordinates are currently collected/displayed by the frontend.
 
-### Manually acquire and validate the eight Place IDs
+| Dataset district | Reference | Latitude | Longitude | OSM source |
+| --- | --- | ---: | ---: | --- |
+| Bengaluru Urban | Bengaluru city reference | 12.9767936 | 77.5900820 | [City relation](https://www.openstreetmap.org/relation/7902476) |
+| Bengaluru Rural | Devanahalli DC Office administrative reference | 13.2809804 | 77.6227856 | [Office site](https://www.openstreetmap.org/way/1193268145) |
+| Mysuru | Mysuru city | 12.3051828 | 76.6553609 | [City node](https://www.openstreetmap.org/node/2068274800) |
+| Mandya | Mandya city | 12.5238888 | 76.8961961 | [City node](https://www.openstreetmap.org/node/652721136) |
+| Tumakuru | Tumakuru city | 13.3400771 | 77.1006208 | [City node](https://www.openstreetmap.org/node/571400151) |
+| Hassan | Hassan city | 13.0070817 | 76.0992703 | [City node](https://www.openstreetmap.org/node/340748436) |
+| Kolar | Kolar city | 13.1367201 | 78.1337246 | [City node](https://www.openstreetmap.org/node/245618507) |
+| Ramanagara | Ramanagara headquarters town | 12.7252766 | 77.2804797 | [Town node](https://www.openstreetmap.org/node/245609255) |
 
-The eight reference entries live in `frontend/src/config/districtMapReferences.js`. This is a small map-only configuration, separate from source-linked District records: no schema migration or API contract change is needed. Each tuple is **[exact dataset district name, our own reference label, Place ID or null]**. All IDs currently remain null because no Maps credentials are configured. Labels describe intended search targets, not already verified Google results.
+The Bengaluru Urban point is Nominatim's city reference for the city relation. Bengaluru Rural uses the bounding-box center returned by Overpass for the mapped **office site**, not a district centroid or a surveyed building entrance. The [district administration address](https://bangalorerural.nic.in/en/contact-us/) identifies its office at Beerasandra, Devanahalli. Other entries use explicit OSM city/town nodes; district boundary results were excluded. OSM data is © OpenStreetMap contributors under the [ODbL](https://www.openstreetmap.org/copyright). The configuration retains source URLs and verification dates; there is no runtime geocoding service.
 
-Use the [official Place ID Finder](https://developers.google.com/maps/documentation/places/web-service/place-id) or [Places Text Search (New)](https://developers.google.com/maps/documentation/javascript/place-search) manually. Search the following targets, reviewing each result individually; never take the first result automatically or fuzzy-match dataset names:
+The dataset name remains **Ramanagara**. The UI retains the administrative note **Bengaluru South / Bangalore South (renamed in 2025)** with Ramanagara as headquarters, supported by [district administration history](https://ramanagara.nic.in/en/history/). No source-linked database record was renamed.
 
-| Dataset district | Search target in Karnataka, India |
-| --- | --- |
-| Bengaluru Urban | Bengaluru city headquarters reference |
-| Bengaluru Rural | Deputy Commissioner's district office, Beerasandra, Devanahalli |
-| Mysuru | Mysuru city headquarters reference |
-| Mandya | Mandya city headquarters reference |
-| Tumakuru | Tumakuru city headquarters reference |
-| Hassan | Hassan city headquarters reference |
-| Kolar | Kolar city headquarters reference |
-| Ramanagara | Ramanagara city headquarters reference |
+### Tiles, attribution and failure handling
 
-For Bengaluru Rural, check the [district administration office address](https://bangalorerural.nic.in/en/whos-who-en/) and choose its identifiable administrative office reference rather than a similarly named Bengaluru city result.
+The interactive browser uses `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. **© OpenStreetMap contributors** attribution must remain visible. Public OSM tiles are a best-effort community service intended for normal interactive use, without an availability guarantee. Follow the [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/): no bulk downloads, offline downloading, prefetch jobs, cache-busting or custom caching proxies. Browser HTTP caching and normal Referer headers remain enabled; only currently viewed tiles are requested. No application-level tile storage or background geocoding is implemented.
 
-Before storing each selected ID:
-
-1. Inspect the result's display name and formatted address. Confirm the intended city/administrative office, Karnataka, India, and a nonempty Place ID. For Text Search, request `id`, `displayName`, and `formattedAddress`; inspect candidates manually. Use a map inspection or official office address to resolve ambiguity; leave null if uncertain.
-2. Replace only that tuple's null with the exact selected Place ID, and write an application-authored reference label if necessary. Store only the ID and our metadata, **not** Google-returned names, formatted addresses, locations or search responses. IDs are not API secrets. Do not copy an example ID from Google documentation.
-3. Run frontend tests and build. The mapping validator checks exactly eight known Karnataka dataset names, unique district entries, unique nonempty IDs, and permitted metadata fields. It rejects extra coordinate fields. These structural checks do not certify a real place's identity; human verification above is required.
-4. Reload the configured map and manually inspect each reference. Select Bengaluru Rural, Mysuru, Mandya and Ramanagara from both the ranking and markers. Confirm the panel label and regional position before treating the mapping as verified.
-
-At runtime the Places library creates `new Place({ id })` and requests only `location` with `fetchFields`; our labels already supply the panel text. The returned location is passed directly to AdvancedMarkerElement and bounds/pan operations. It stays in component memory only—no database, CSV, localStorage or persistent coordinate cache. Selected-district or analytics changes update marker styling/pan without fetching Place Details again; remount, dataset refresh or explicit retry can resolve again. Library loads are bounded at 20 seconds and individual detail requests at 10 seconds. Timed-out SDK operations are ignored if they later finish.
-
-Map markers represent **district headquarters/reference locations**, not complaints, exact district centroids or infrastructure project sites. Existing database latitude/longitude fields are not used as a fallback and are not modified. The initial view fits resolved references; selection pans without changing zoom. Missing IDs and failed resolutions are named visibly.
-
-The dataset continues to call the district **Ramanagara**. Its selected-reference panel explains **Bengaluru South (renamed in 2025)**, with Ramanagara still the headquarters, citing the [district administration history](https://ramanagara.nic.in/en/history/). No Census/JJM-linked district name or provenance is changed.
-
-All automated map tests mock the Google loader/Places/markers, including partial failure and selection. No real Maps or Gemini calls or citizen-request writes occur in tests. Census 2011, JJM through 21 Sep 2026, and synthetic/AI demonstration demand remain prototype context, not official policy recommendations.
+Missing/invalid references omit only their markers. A map error boundary preserves the rest of District Intelligence if initialization fails; tile failures show a small notice. Frontend tests mock React Leaflet and make no external tile requests. Existing request Analyze/Submit and deterministic planning remain unchanged. `VITE_API_BASE_URL` is the only frontend environment setting required for the API; no mapping environment variables are used.
 
 ## Citizen request preview and submission flow
 

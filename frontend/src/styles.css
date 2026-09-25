@@ -560,8 +560,12 @@ footer {
 .district-map p, .provenance p, .request-context > p { font-size: 12px; }
 .map-canvas { height: 400px; width: 100%; border-radius: 8px; }
 .map-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
-.district-marker { padding: 8px 12px; border: 2px solid white; box-shadow: 0 2px 5px #17304444; }
-.map-selected { outline: 3px solid #155673; font-size: 12px; }
+.reference-marker { display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 5px #17304466; font-size: 12px; }
+.reference-selected { outline: 3px solid #155673; }
+.map-canvas { z-index: 0; }
+.leaflet-popup-content { min-width: 220px; max-width: 280px; }
+.leaflet-popup-content p { margin: 8px 0; }
+.leaflet-marker-icon:focus-visible { outline: 3px solid #155673; }
 .map-reference-panel { margin-top: 18px; padding: 16px; background: #fff; border: 1px solid #dce5ec; border-radius: 8px; overflow-wrap: anywhere; }
 .map-reference-panel h4 { margin: 0 0 10px; }
 .intelligence-bottom { border-top: 1px solid #dce5ec; margin-top: 25px; padding-top: 25px; }
@@ -574,4 +578,4 @@ footer {
 .provenance dd { font-size: 13px; }
 .provenance > strong { font-size: 12px; }
 @media(max-width:1000px) { .intelligence-grid, .intelligence-bottom { grid-template-columns: 1fr; } }
-@media(max-width:550px) { .intelligence { padding: 18px; } .intelligence-heading { flex-direction: column; align-items: start; } .intelligence-metrics { grid-template-columns: 1fr; } .map-canvas { height: 340px; } }
+@media(max-width:550px) { .intelligence { padding: 18px; } .intelligence-heading { flex-direction: column; align-items: start; } .intelligence-metrics { grid-template-columns: 1fr; } .map-canvas { height: 360px; } }
