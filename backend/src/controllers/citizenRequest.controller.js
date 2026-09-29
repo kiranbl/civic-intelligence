@@ -1,8 +1,7 @@
-import { analyzeCitizenText } from '../services/requestAnalysis.service.js';
-import { createCitizenRequest } from '../services/citizenRequest.service.js';
+import { analyzeCitizenRequest, createCitizenRequest } from '../services/citizenRequest.service.js';
 
 export async function analyze(req, res) {
-  const data = await analyzeCitizenText(res.locals.input.text);
+  const data = await analyzeCitizenRequest(res.locals.input);
   res.json({ success: true, data });
 }
 

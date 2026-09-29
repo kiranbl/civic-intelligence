@@ -15,10 +15,14 @@ export function validateRequestText(value) {
 }
 
 export function validateCitizenRequestBody(body, save = false) {
-  const keys = save ? ['districtId', 'text', 'channel'] : ['text'];
+  const keys = save ? ['districtId', 'text', 'channel'] : ['text', 'districtId'];
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !keys.includes(key))) invalid();
   const text = validateRequestText(body.text);
-  if (!save) return { text };
+  if (!save) {
+    if (body.districtId === undefined) return { text };
+    if (!Number.isInteger(body.districtId) || body.districtId <= 0 || body.districtId > 2147483647) invalid();
+    return { text, districtId: body.districtId };
+  }
   if (!Number.isInteger(body.districtId) || body.districtId <= 0 || body.districtId > 2147483647
     || !REQUEST_CHANNELS.includes(body.channel)) invalid();
   return { districtId: body.districtId, text, channel: body.channel };

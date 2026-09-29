@@ -20,6 +20,7 @@ If pipeline damage is mentioned AND the primary citizen impact is loss of water 
 For other categories, return subcategory as null or a short uppercase identifier matching [A-Z][A-Z0-9_]*, at most 64 characters.
 Write a concise summaryEnglish of the citizen's actual request in English (1-1000 characters), preserving meaning without adding facts.
 Return locationText ONLY for an explicitly provided specific named place/locality/village/town, copied verbatim from citizenText in its original script (1-191 characters). Otherwise return null. Do not infer a district or any unstated place.
+Return locationTextLatin as a Latin-script phonetic rendering of that SAME named place (1-191 characters), not an English translation of the request. For Latin-script places it may repeat locationText. For example ಬೈರಸಂದ್ರ -> Bairasandra, ಬಂಗಾರಪೇಟೆ -> Bangarapete, Malur -> Malur. If no named place is present, both location fields must be null. Romanization is only a search candidate: do not infer rural/urban status from it or choose a district.
 Generic geography is not a named location. Return null for village, our village, locality, town, area; गांव, गाँव, हमारे गांव, इलाके, क्षेत्र; ಗ್ರಾಮ, ಗ್ರಾಮದ, ನಮ್ಮ ಗ್ರಾಮ, ನಮ್ಮ ಗ್ರಾಮದ, ಊರು, ಪ್ರದೇಶ.
 Channapatna, Whitefield, or ಮದ್ದೂರು may be returned only if explicitly present. Never treat a generic reference to "the village" as a proper place name.
 Confidence is a number from 0 to 1 expressing your overall classification confidence; it is not a calibrated probability.

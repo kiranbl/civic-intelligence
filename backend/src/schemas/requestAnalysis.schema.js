@@ -12,6 +12,7 @@ export const REQUEST_ANALYSIS_SCHEMA = {
     areaType: { type: 'string', enum: ['RURAL', 'URBAN', 'UNKNOWN'] },
     summaryEnglish: { type: 'string', description: 'Concise English summary, at most 1000 characters. Preserve meaning; do not add facts.' },
     locationText: { type: ['string', 'null'], description: 'Null or an explicitly mentioned place copied verbatim in its original script, at most 191 characters.' },
+    locationTextLatin: { type: ['string', 'null'], maxLength: 191, description: 'Null or Latin-script phonetic rendering of the same named place in locationText. Search hint only, not a translation of the request.' },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
   },
 };

@@ -55,7 +55,7 @@ test('existing channel enum accepts text submissions marked VOICE or MESSAGING w
   for (const channel of ['VOICE', 'MESSAGING']) assert.equal((await post('', { districtId: 1, text: 'Need water', channel })).status, 201);
 });
 test('empty, non-string, oversized input and extra body fields fail before AI or database use', async () => {
-  for (const body of [{}, { text: '' }, { text: '   ' }, { text: null }, { text: 123 }, { text: 'a'.repeat(MAX_REQUEST_TEXT_LENGTH + 1) }, { text: 'Water', districtId: 99 }, { text: 'Water', model: 'attacker-model' }]) {
+  for (const body of [{}, { text: '' }, { text: '   ' }, { text: null }, { text: 123 }, { text: 'a'.repeat(MAX_REQUEST_TEXT_LENGTH + 1) }, { text: 'Water', districtId: '99' }, { text: 'Water', model: 'attacker-model' }]) {
     const result = await post('/analyze', body); assert.equal(result.status, 400);
   }
   assert.equal(aiCalls.length, 0); assert.equal(writes.length, 0); assert.equal(lookups.length, 0);
@@ -123,4 +123,32 @@ test('second fallback model is preserved when saving a request', async () => {
   const result = await post('', { districtId: 1, text: 'Water', channel: 'TEXT' });
   assert.equal(result.status, 201);
   assert.equal(writes[0].data.aiModel, 'gemini-3.5-flash-lite');
+});
+
+for (const [name, location, expected] of [['Bengaluru Urban','Uttarahalli','URBAN'],['Mandya','Madapuranala','RURAL'],['Mysuru','Elwala','URBAN'],['Hassan','Unlisted locality','UNKNOWN']]) {
+  test(`preview and create share official settlement resolution for ${name}/${location}`, async () => {
+    replace(prisma.district, 'findUnique', async () => ({ id:1, name, state:'Karnataka' }));
+    replace(geminiClient, 'analyze', async () => ({text:JSON.stringify({...output,areaType:'UNKNOWN',locationText:location}),model:'mock'}));
+    const text=`Water supply failed in ${location}.`;
+    const preview=await post('/analyze',{text,districtId:1});
+    assert.equal(preview.status,200);assert.equal(preview.body.data.areaType,expected);assert.equal(writes.length,0);
+    const created=await post('',{text,districtId:1,channel:'TEXT'});
+    assert.equal(created.status,201);assert.equal(created.body.data.areaType,expected);assert.equal(writes[0].data.areaType,expected);
+  });
+}
+test('preview validates optional district and rejects unknown district before AI',async()=>{
+ for(const districtId of [null,'1',0,-1,1.5,2147483648]) assert.equal((await post('/analyze',{text:'Water',districtId})).status,400);
+ replace(prisma.district,'findUnique',async()=>null);
+ assert.equal((await post('/analyze',{text:'Water',districtId:99})).status,404);assert.equal(aiCalls.length,0);assert.equal(writes.length,0);
+});
+
+test('romanized preview and create use identical district-scoped resolution without persisting search hints',async()=>{
+ replace(prisma.district,'findUnique',async()=>({id:1,name:'Kolar',state:'Karnataka'}));
+ replace(geminiClient,'analyze',async()=>({text:JSON.stringify({...output,language:'kn',areaType:'UNKNOWN',locationText:'ಬೈರಸಂದ್ರ',locationTextLatin:'Bairasandra'}),model:'mock'}));
+ const text='ಬೈರಸಂದ್ರ ನೀರು ಬೇಕು';
+ const preview=await post('/analyze',{text,districtId:1});
+ assert.equal(preview.status,200);assert.equal(preview.body.data.areaType,'RURAL');assert.equal(preview.body.data.locationTextLatin,'Bairasandra');assert.equal(writes.length,0);
+ const created=await post('',{text,districtId:1,channel:'TEXT'});
+ assert.equal(created.status,201);assert.equal(created.body.data.areaType,preview.body.data.areaType);
+ assert.equal(writes.length,1);assert.equal('locationTextLatin' in writes[0].data,false);assert.equal('method' in preview.body.data,false);
 });

@@ -1,89 +1,90 @@
-import { Component, useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { divIcon } from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DISTRICT_LOCATIONS, getDistrictLocation, RAMANAGARA_NAMING_NOTE } from '../config/districtLocations';
+import { loadMaps, mapsConfig } from '../services/maps';
 import PriorityBadge from './PriorityBadge';
 import { score, percent, number } from './format';
 
-class MapErrorBoundary extends Component {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  render() {
-    return this.state.failed ? <p role="alert">The district map could not be displayed. District Intelligence and the ranking remain available.</p> : this.props.children;
-  }
+function details(district, reference, row) {
+  return `District reference location\n${district.name}\n${reference.label}\nPriority: ${row?.priorityLevel || 'INCOMPLETE'} · Score: ${score(row?.priorityScore)}\nJJM coverage: ${percent(row?.ruralFhtcCoverage)} · Rural WATER requests: ${number(row?.ruralWaterRequestCount)}`;
 }
-
-// React Leaflet keeps MapContainer options immutable; synchronize selection through useMap.
-function MapSelection({ points, selected }) {
-  const map = useMap();
-  const previous = useRef(selected);
-  useEffect(() => {
-    if (previous.current === selected) return;
-    previous.current = selected;
-    const point = points.find(p => p.district.id === selected);
-    if (point) map.panTo([point.reference.latitude, point.reference.longitude], { animate: false });
-  }, [selected, points, map]);
-  useEffect(() => {
-    const element = map.getContainer();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => map.invalidateSize({ pan: false }));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [map]);
-  return null;
-}
-
-function ReferenceDetails({ district, reference, row }) {
-  return <>
-    <strong>District reference location</strong>
-    <p>Dataset district: <strong>{district.name}</strong></p>
-    <p>Reference: {reference?.label || 'Geographic reference unavailable'}</p>
-    <p><PriorityBadge level={row?.priorityLevel} /> · Score: {score(row?.priorityScore)}</p>
-    <p>JJM coverage: {percent(row?.ruralFhtcCoverage)} · Rural WATER requests: {number(row?.ruralWaterRequestCount)}</p>
-    {district.name === 'Ramanagara' && district.state === 'Karnataka' && <p>{RAMANAGARA_NAMING_NOTE} <a href="https://ramanagara.nic.in/en/history/" target="_blank" rel="noreferrer">District administration naming note</a></p>}
-  </>;
-}
-
-function markerIcon(level, selected) {
-  const labels = { VERY_HIGH: 'VH', HIGH: 'H', MEDIUM: 'M', LOW: 'L' };
-  const safeLevel = Object.hasOwn(labels, level) ? level : 'INCOMPLETE';
-  return divIcon({
-    className: 'reference-marker badge ' + safeLevel.toLowerCase() + (selected ? ' reference-selected' : ''),
-    html: `<span>${selected ? '★ ' : ''}${labels[safeLevel] || '?'}</span>`,
-    iconSize: [38, 32], iconAnchor: [19, 16], popupAnchor: [0, -18],
-  });
-}
-
 export default function DistrictMap({ districts, rows, selected, onSelect, locations = DISTRICT_LOCATIONS }) {
-  const [tileError, setTileError] = useState(false);
+  const container = useRef(null), instance = useRef(null);
+  const latest = useRef({ rows, selected, onSelect }); latest.current = { rows, selected, onSelect };
+  const [status, setStatus] = useState('loading');
   const points = useMemo(() => districts.map(district => ({ district, reference: getDistrictLocation(district, locations) })).filter(p => p.reference), [districts, locations]);
   const missing = districts.filter(d => !getDistrictLocation(d, locations));
-  const selectedDistrict = districts.find(d => d.id === selected);
-  const bounds = points.map(p => [p.reference.latitude, p.reference.longitude]);
-  // Remount only when the reference set changes, not on selection or analytics updates.
-  const mapKey = points.map(p => `${p.district.id}:${p.reference.latitude}:${p.reference.longitude}`).join('|');
+  const enabled = Boolean(mapsConfig.key && mapsConfig.mapId && points.length);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false, timer, state;
+    setStatus('loading');
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Map load timeout')), 20000); });
+    Promise.race([loadMaps(), timeout]).then(({ Map, AdvancedMarkerElement, InfoWindow, LatLngBounds }) => {
+      if (cancelled) return;
+      const map = new Map(container.current, { mapId: mapsConfig.mapId, center: { lat: points[0].reference.latitude, lng: points[0].reference.longitude }, zoom: 7,
+        maxZoom: 9, minZoom: 5, gestureHandling: 'cooperative', mapTypeControl: false, streetViewControl: false });
+      const info = new InfoWindow();
+      state = { map, info, entries: [], previous: latest.current.selected };
+      const bounds = new LatLngBounds();
+      for (const point of points) {
+        const position = { lat: point.reference.latitude, lng: point.reference.longitude };
+        const node = document.createElement('span');
+        const marker = new AdvancedMarkerElement({ map, position, title: `${point.district.name} district reference location` });
+        marker.append(node);
+        const listener = marker.addListener('click', () => {
+          state.openDistrict = point.district.id;
+          latest.current.onSelect(point.district.id);
+          const content = document.createElement('div'); content.className = 'map-info';
+          content.textContent = details(point.district, point.reference, latest.current.rows.find(r => r.districtId === point.district.id))
+            + (point.district.name === 'Ramanagara' ? '\n' + RAMANAGARA_NAMING_NOTE : '');
+          info.setContent(content); info.open({ map, anchor: marker });
+        });
+        state.entries.push({ ...point, marker, node, listener, position }); bounds.extend(position);
+      }
+      map.fitBounds(bounds, 32);
+      state.idle = map.addListener('idle', () => { map.setOptions({ maxZoom: 12 }); state.idle?.remove(); });
+      instance.current = state; setStatus('ready');
+    }).catch(() => { if (!cancelled) setStatus('error'); }).finally(() => clearTimeout(timer));
+    return () => {
+      cancelled = true; clearTimeout(timer);
+      state?.info.close(); state?.idle?.remove();
+      state?.entries.forEach(({ marker, listener }) => { listener.remove(); marker.map = null; });
+      instance.current = null;
+    };
+  }, [enabled, points]);
+  useEffect(() => {
+    const state = instance.current; if (!state || status !== 'ready') return;
+    for (const entry of state.entries) {
+      const level = rows.find(r => r.districtId === entry.district.id)?.priorityLevel;
+      const labels = { VERY_HIGH: 'VH', HIGH: 'H', MEDIUM: 'M', LOW: 'L' };
+      const safe = Object.hasOwn(labels, level) ? level : 'INCOMPLETE';
+      const active = selected === entry.district.id;
+      entry.node.className = `reference-marker badge ${safe.toLowerCase()}${active ? ' reference-selected' : ''}`;
+      entry.node.textContent = `${active ? '★ ' : ''}${labels[safe] || '?'}`;
+      entry.marker.zIndex = active ? 1000 : 0;
+      if (active && state.previous !== selected) { if (state.openDistrict !== selected) state.info.close(); state.map.panTo(entry.position); }
+    }
+    state.previous = selected;
+  }, [rows, selected, status]);
+  const district = districts.find(d => d.id === selected);
+  const reference = district && getDistrictLocation(district, locations);
+  const row = rows.find(r => r.districtId === selected);
   return <section className="district-map" aria-labelledby="map-title">
     <h3 id="map-title">District Map</h3>
     <p>Markers represent district headquarters/reference locations. They are not citizen complaint locations, infrastructure project locations, or exact district centroids.</p>
-    {missing.length > 0 && <p className="notice">Geographic reference unavailable for: {missing.map(d => d.name).join(', ')}. Only those markers are omitted.</p>}
-    {tileError && <p className="notice" role="status">Some map tiles could not be loaded. Reference markers and district information remain available.</p>}
-    {points.length ? <MapErrorBoundary key={mapKey}>
-      <MapContainer className="map-canvas" bounds={bounds} boundsOptions={{ padding: [32, 32], maxZoom: 9 }} maxZoom={12} minZoom={5} scrollWheelZoom={false} aria-label="Karnataka district reference map">
-        <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' keepBuffer={0} updateWhenIdle eventHandlers={{ tileerror: () => setTileError(true) }} />
-        <MapSelection points={points} selected={selected} />
-        {points.map(({ district, reference }) => {
-          const row = rows.find(r => r.districtId === district.id);
-          // Leaflet title options are immutable; dynamic status is shown in the icon and reference panel.
-          const title = `${district.name} district reference location`;
-          return <Marker key={district.id} position={[reference.latitude, reference.longitude]} icon={markerIcon(row?.priorityLevel, selected === district.id)} title={title} alt={title} keyboard zIndexOffset={selected === district.id ? 1000 : 0} eventHandlers={{ click: () => onSelect(district.id) }}>
-            <Popup><ReferenceDetails district={district} reference={reference} row={row} /></Popup>
-          </Marker>;
-        })}
-      </MapContainer>
-    </MapErrorBoundary> : <p className="notice">Map unavailable. No verified district reference locations are available.</p>}
-    <p className="fine">© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> · Headquarters/reference points only.</p>
-    {selectedDistrict && <div className="map-reference-panel" aria-label="Selected district map reference"><h4>Selected district reference</h4><ReferenceDetails district={selectedDistrict} reference={getDistrictLocation(selectedDistrict, locations)} row={rows.find(r => r.districtId === selected)} /></div>}
+    {!mapsConfig.key || !mapsConfig.mapId ? <p className="notice">Map unavailable. Configure the Google Maps browser API key and Map ID.</p> : null}
+    {missing.length > 0 && <p className="notice">Geographic reference unavailable for: {missing.map(d => d.name).join(', ')}.</p>}
+    {!points.length && <p className="notice">No verified district reference locations are available.</p>}
+    {enabled && <>
+      {status === 'loading' && <p role="status">Loading district map…</p>}
+      {status === 'error' && <p role="alert">The map could not be loaded. District Intelligence and ranking remain available.</p>}
+      <div className="map-canvas" ref={container} aria-label="Karnataka district reference map" hidden={status === 'error'} />
+    </>}
+    {district && <div className="map-reference-panel" aria-label="Selected district map reference"><h4>Selected district reference</h4>
+      <p className="map-info">{details(district, reference || { label: 'Geographic reference unavailable' }, row)}</p>
+      {district.name === 'Ramanagara' && <p>{RAMANAGARA_NAMING_NOTE} <a href="https://ramanagara.nic.in/en/history/" target="_blank" rel="noreferrer">District administration naming note</a></p>}
+    </div>}
+    <p className="fine">Reference coordinates: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. Map imagery: Google. Headquarters/reference points only.</p>
     <div className="map-legend" aria-label="Prototype priority legend">{['VERY_HIGH', 'HIGH', 'MEDIUM', 'LOW'].map(level => <PriorityBadge key={level} level={level} />)}</div>
     <p className="fine">Marker letters: VH = VERY_HIGH, H = HIGH, M = MEDIUM, L = LOW. A star and outline identify the selected district. Ranking buttons also select districts.</p>
   </section>;

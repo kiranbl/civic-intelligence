@@ -26,7 +26,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('District Intelligence', () => {
   it('ranking selection updates intelligence and loads each selected district history without writes', async () => {
     render(<Home />);
-    await screen.findByRole('heading', { name: 'District Intelligence' });
+    await screen.findByText('From citizen voices to development intelligence'); fireEvent.click(screen.getByRole('tab', { name: 'Rural Water' })); await screen.findByRole('heading', { name: 'District Intelligence' });
     for (const d of districts) {
       fireEvent.click(screen.getByRole('button', { name: d.name }));
       const panel = screen.getByRole('region', { name: 'District Intelligence' });
@@ -63,10 +63,10 @@ describe('District Intelligence', () => {
     expect(await screen.findByText('No requests recorded for this district.')).toBeTruthy();
   });
   it.each([['/districts', 'Retry districts'], ['/water-priority', 'Retry analytics']])('isolates %s failure', async (path, retry) => {
-    mockApi(path); render(<Home />);
+    mockApi(path); render(<Home />); await screen.findByText('From citizen voices to development intelligence'); fireEvent.click(screen.getByRole('tab', { name: 'Rural Water' }));
     expect(await screen.findByRole('button', { name: retry })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Rural Water Infrastructure Priority' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Rural Water Evidence Analysis' })).toBeTruthy();
     if (path === '/districts') expect(screen.getByRole('heading', { name: 'District Intelligence' })).toBeTruthy();
-    else expect(screen.getByRole('button', { name: 'Analyze Request' })).toBeTruthy();
+    else { fireEvent.click(screen.getByRole('tab', { name: 'Submit Request' })); expect(screen.getByRole('button', { name: 'Analyze Request' })).toBeTruthy(); }
   });
 });

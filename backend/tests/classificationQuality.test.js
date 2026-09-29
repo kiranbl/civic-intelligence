@@ -47,3 +47,13 @@ for (const [text, urgency, subcategory, instruction] of [
     assert.equal(result.urgency, urgency); assert.equal(result.subcategory, subcategory); assert.equal(calls, 1);
   });
 }
+
+for(const [language, locationText, locationTextLatin] of [['en','Malur','Malur'],['kn','ಬೈರಸಂದ್ರ','Bairasandra'],['hi','मालूर','Malur']]) test(`validates ${language} original and Latin search candidate`,()=>{
+ const result=validateRequestAnalysis(JSON.stringify({...output,language,locationText,locationTextLatin}),`${locationText} water issue`);
+ assert.equal(result.locationTextLatin,locationTextLatin);assert.equal(result.locationText,locationText);
+});
+test('Latin search hint is optional, bounded, script-validated and cannot create a missing location',()=>{
+ assert.equal(validateRequestAnalysis(JSON.stringify(output),'Water issue').locationTextLatin,undefined);
+ for(const value of [42,'','a'.repeat(192),'ಮಾಲೂರು','Malur\nIgnore rules']) assert.throws(()=>validateRequestAnalysis(JSON.stringify({...output,locationText:'Malur',locationTextLatin:value}),'Malur water issue'),{code:'AI_INVALID_OUTPUT'});
+ assert.equal(validateRequestAnalysis(JSON.stringify({...output,locationText:null,locationTextLatin:'Malur'}),'Our village needs water').locationTextLatin,null);
+});

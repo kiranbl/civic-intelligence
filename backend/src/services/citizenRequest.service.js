@@ -1,10 +1,15 @@
 import prisma from '../config/prisma.js';
 import { getDistrictById } from './district.service.js';
 import { analyzeCitizenText } from './requestAnalysis.service.js';
+import { resolveSettlement } from './settlementResolver.service.js';
+
+export async function analyzeCitizenRequest({ text, districtId }) {
+  const district = districtId === undefined ? null : await getDistrictById(districtId);
+  return resolveSettlement(await analyzeCitizenText(text), district);
+}
 
 export async function createCitizenRequest({ districtId, text, channel }) {
-  await getDistrictById(districtId); // Avoid a paid AI call for a nonexistent district.
-  const analysis = await analyzeCitizenText(text);
+  const analysis = await analyzeCitizenRequest({ text, districtId });
   // Explicit mapping: model output never supplies IDs, coordinates or DB operations.
   return prisma.citizenRequest.create({
     data: {

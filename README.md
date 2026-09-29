@@ -17,7 +17,7 @@ This repository contains the application scaffold and first database layer:
 - Validated Census 2011 district population import with source/year provenance.
 - Backend HTTP tests using Node's built-in test runner.
 
-Gemini now structures multilingual citizen requests. The District Intelligence view includes Leaflet and OpenStreetMap integration. Authentication, audio processing, and Google Cloud deployment remain deferred.
+Gemini now structures multilingual citizen requests. The District Intelligence view uses Google Maps with existing verified reference coordinates. Optional microphone input uses backend-mediated Google Cloud Speech-to-Text before the unchanged Gemini Analyze → Review → Submit flow. Authentication remains deferred.
 
 ## Requirements
 
@@ -280,13 +280,13 @@ Obtain your own key through Google AI Studio. Never commit it or put it in a fro
 
 Architecture: routes validate request bodies; controllers handle HTTP; the shared analysis service calls an isolated Gemini client and validates output; the create service alone persists an explicit field mapping through Prisma. The client has a fixed server instruction, separate JSON-encoded citizen data, a 30-second abort/deadline and one attempt. No function calling, agents, RAG, embeddings or database access is provided to Gemini. Prompt-injection-like text cannot set the server instruction, schema, model, database IDs or write fields. These boundaries and output validation do not guarantee that real model classifications resist every semantic manipulation; tests verify server behavior, not model accuracy.
 
-`POST /api/citizen-requests/analyze` accepts only:
+`POST /api/citizen-requests/analyze` accepts text and an optional districtId for historical settlement resolution:
 
 ```json
 { "text": "Our village pipeline has been broken for two weeks." }
 ```
 
-Text must be a string, at most 5,000 JavaScript characters (UTF-16 code units) before trimming, and nonempty after trimming. The endpoint returns HTTP 200 with `{ "success": true, "data": { ...validatedAnalysis, "model": "gemini-3.8-flash" } }`. It makes no database calls or writes.
+Text must be a string, at most 5,000 JavaScript characters (UTF-16 code units) before trimming, and nonempty after trimming. The endpoint returns HTTP 200 with `{ "success": true, "data": { ...validatedAnalysis, "model": "gemini-3.8-flash" } }`. It never writes to the database. When districtId is supplied it reads and validates that district before Gemini; without districtId it performs no database lookup.
 
 `POST /api/citizen-requests` accepts only:
 
@@ -294,7 +294,7 @@ Text must be a string, at most 5,000 JavaScript characters (UTF-16 code units) b
 { "districtId": 1, "text": "Our village pipeline has been broken for two weeks.", "channel": "TEXT" }
 ```
 
-districtId must be a positive JSON integer within the MySQL Int range and refer to an existing district. It is checked before calling Gemini. channel is required and must be TEXT, VOICE or MESSAGING; these describe the origin of supplied **text**, with no audio or speech processing. The service analyzes the text and returns HTTP 201 with `{ "success": true, "data": createdCitizenRequest }`. It stores the trimmed original text, application-supplied district/channel, validated AI fields, configured model, confidence and server processing timestamp. IDs and timestamps come from the server/database; coordinates remain null. Extra body fields, such as a client-supplied category, confidence, model, district in the analyze endpoint, or priority score, are rejected.
+districtId must be a positive JSON integer within the MySQL Int range and refer to an existing district. It is checked before calling Gemini. channel is required and must be TEXT, VOICE or MESSAGING; these describe the origin of supplied **text**, with no audio or speech processing. The service analyzes the text and returns HTTP 201 with `{ "success": true, "data": createdCitizenRequest }`. It stores the trimmed original text, application-supplied district/channel, validated AI fields, configured model, confidence and server processing timestamp. IDs and timestamps come from the server/database; coordinates remain null. Extra body fields, such as a client-supplied category, confidence, model, arbitrary district names, or priority score, are rejected.
 
 Migration **20260923090000_citizen_request_ai_analysis** adds nullable `summaryEnglish` (TEXT), `locationText`, `aiModel`, `aiConfidence`, and `aiProcessedAt` to CitizenRequest. The local schema migration is applied; existing requests are not reclassified or backfilled. Existing 32 synthetic demo requests remain valid with null AI fields. Census and JJM records are unchanged. For another environment, run `npx prisma migrate deploy` and `npm run prisma:generate` before using the new fields.
 
@@ -419,7 +419,7 @@ Every result notes synthetic/AI demonstration citizen demand, relative normaliza
 
 ## District Intelligence mapping
 
-The supplementary map uses **Leaflet + React Leaflet** and OpenStreetMap raster tiles. It requires no API key, billing account, or Google Maps configuration. Gemini remains the backend AI provider and its configuration is unchanged.
+The supplementary map uses **Google Maps JavaScript API**, the official `@googlemaps/js-api-loader` and `AdvancedMarkerElement` (no deprecated legacy Marker). Set `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` at Vite build time. Restrict the public browser key to Maps JavaScript API and your frontend HTTP referrers. The key is intentionally browser-visible; never use a server/service-account credential here. Missing configuration leaves a friendly disabled map, while district analysis stays usable. Only maps, marker and core libraries are loaded: no Places, Geocoding, Routes or coordinate lookup calls.
 
 Select a ranking button or map marker to update District Intelligence. Initial bounds show all configured references, with zoom capped at 9 for the initial fit; later selections pan without changing zoom. Popups show district name, reference label, priority, score, coverage and rural WATER count. Marker letters and a selected star supplement priority colors. The ranking remains keyboard-accessible navigation when mapping is unavailable.
 
@@ -442,15 +442,59 @@ The Bengaluru Urban point is Nominatim's city reference for the city relation. B
 
 The dataset name remains **Ramanagara**. The UI retains the administrative note **Bengaluru South / Bangalore South (renamed in 2025)** with Ramanagara as headquarters, supported by [district administration history](https://ramanagara.nic.in/en/history/). No source-linked database record was renamed.
 
-### Tiles, attribution and failure handling
+### Map failure handling and source attribution
 
-The interactive browser uses `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. **© OpenStreetMap contributors** attribution must remain visible. Public OSM tiles are a best-effort community service intended for normal interactive use, without an availability guarantee. Follow the [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/): no bulk downloads, offline downloading, prefetch jobs, cache-busting or custom caching proxies. Browser HTTP caching and normal Referer headers remain enabled; only currently viewed tiles are requested. No application-level tile storage or background geocoding is implemented.
-
-Missing/invalid references omit only their markers. A map error boundary preserves the rest of District Intelligence if initialization fails; tile failures show a small notice. Frontend tests mock React Leaflet and make no external tile requests. Existing request Analyze/Submit and deterministic planning remain unchanged. `VITE_API_BASE_URL` is the only frontend environment setting required for the API; no mapping environment variables are used.
+Loading is bounded at 20 seconds and failures stay inside the map area. Missing references omit only those markers. Existing OSM-sourced coordinates and their attribution remain; map imagery and controls are supplied by Google. All map tests mock the SDK, and no live coordinate requests are needed. District names, reference disclaimers, and analytics remain unchanged.
 
 ## Citizen request preview and submission flow
 
-The dashboard includes a two-step demonstration form. Choose a district, enter up to 5,000 JavaScript string characters, and select **Analyze Request**. This calls `/api/citizen-requests/analyze` without saving. English, Kannada and Hindi examples only populate the textarea. Review the interpretation before selecting **Submit Request**. Editing text invalidates the preview; changing district uses the latest explicit selection.
+### Optional microphone input
+
+Choose English (`en-IN`), Kannada (`kn-IN`) or Hindi (`hi-IN`), then Start recording. A supported secure-context Chrome/Edge browser records `audio/webm;codecs=opus` (mono requested, 64 kbps; native microphone capture rate). Stop manually or let the 45-second timer stop it. Unsupported browsers retain typed input. Microphone tracks stop on completion, error, or unmount, including late permission responses; unmount also aborts any pending upload. HTTPS (or localhost) and user microphone permission are required. Type and Speak panels share a roughly 62/38 desktop/tablet layout and stack at 700px or narrower.
+
+The browser uploads to `POST /api/speech/transcribe` using multipart fields **`audio`** (one WebM file), **`languageCode`**, and optional **`districtName`**, captured when recording starts. The backend accepts only the eight canonical Census application district names and derives historical spellings from the existing Census alias mapping. Arbitrary hints and unknown fields are rejected. It never sends credentials. The backend uses memory-only Multer upload handling, then a controller/service and Google's official `@google-cloud/speech` **V2 synchronous** client with Application Default Credentials. There is no database dependency, audio file storage, streaming, browser SpeechRecognition, or automatic Gemini call.
+
+Recognition uses the official @google-cloud/speech V2 SpeechClient and synchronous recognize method, with endpoint us-speech.googleapis.com and implicit recognizer projects/GOOGLE_CLOUD_PROJECT/locations/us/recognizers/_. GOOGLE_CLOUD_PROJECT is read from the server environment; missing/invalid configuration produces a controlled service-unavailable response. ADC remains unchanged. No persistent recognizer is created.
+
+All three locales (en-IN, hi-IN, kn-IN) use model chirp_3, languageCodes containing only the selected locale, autoDecodingConfig: {}, and features: { enableAutomaticPunctuation: true }. Uploaded audio is supplied as inline content bytes. Automatic decoding replaces explicit codec/sample-rate/channel settings; browser WebM/Opus stays unchanged without resampling or transcoding. Obsolete V1 model/feature checks and alternatives settings are removed.
+
+Context uses adaptation.phraseSets[].inlinePhraseSet.phrases with individual { value } objects and no boost. Only the existing civic terminology and validated district canonical/historical names are included, for all three locales. English civic terms may assist mixed-language speech. No arbitrary client hints, personal locality hardcoding or persistent PhraseSet resources are added. The primary transcript is returned without rewriting; Analyze and Submit remain separate.
+
+Google's [V2 language matrix](https://docs.cloud.google.com/speech-to-text/docs/speech-to-text-supported-languages) lists Chirp 3, punctuation and adaptation for all three locales in us. The [Chirp 3 guide](https://docs.cloud.google.com/speech-to-text/docs/models/chirp-3) documents synchronous Recognize and the implicit recognizer; Kannada is listed as Preview. Audio is processed in the US multi-region. The 30-second provider deadline, 1 MiB upload limit, rate limits and safe errors remain in force.
+
+Repeat live 10–45 second English/Hindi/Kannada complaints manually, including water quality, affected houses and a local area name. Verify project API/IAM access, latency, punctuation and editable output. Automated tests mock Speech and cannot establish real recognition quality.
+
+Successful response:
+
+```json
+{"success":true,"data":{"transcript":"Recognized citizen text","languageCode":"en-IN","noSpeech":false}}
+```
+
+Empty recognition returns an empty transcript with `noSpeech:true`. Validation errors return controlled 400/413 responses, quota limits return 429, and provider/authentication failures return a safe 503. No provider messages, credential paths, tokens, audio or transcripts are logged. Transcripts append to existing text, invalidate previous analysis, and remain editable. Analyze and Submit are disabled while recording/transcribing and always require explicit user action. The existing text-submission channel remains `TEXT`; voice only supplies editable text. Text is never silently truncated to fit the 5,000-character limit.
+
+Uploads are limited to **1 MiB**, one audio file and one language field. WebM MIME/header checks reject obvious invalid files; Google validates actual decoding. The browser enforces 45 seconds; this is not a server-side duration parser. V1 synchronous recognition itself rejects audio beyond its supported 60-second limit. Calls use a 30-second SDK deadline and no automatic retries. See [Google's synchronous recognition documentation](https://docs.cloud.google.com/speech-to-text/docs/v1/sync-recognize).
+
+### Speech credentials and paid-endpoint limits
+
+On Render retain `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/gcp-speech-service-account.json` and your configured `GOOGLE_CLOUD_PROJECT`. The mounted service-account JSON stays outside the repository. Local speech testing requires ADC or a local credential path outside the checkout; no JSON is provided or committed. Existing `DATABASE_URL`, CORS, Gemini configuration and production bootstrap remain unchanged. The new Speech client is lazy: health and typed workflows do not require Speech credentials.
+
+The speech route limits **5 attempts per client per 10 minutes**, plus **60 attempts per process per 10 minutes**, before buffering audio or calling Google. IPv6 clients are grouped by subnet. Counts are memory-only and reset on restart; multiple instances have separate quotas. This reduces abuse risk but is not authentication or a global billing guarantee. Google project quotas remain the final external spending control.
+
+The original app did not trust a proxy. `TRUST_PROXY_HOPS` now configures a bounded numeric hop count: default **0 locally**, **1 when Render sets `RENDER=true`**. Never set blanket `trust proxy=true` or trust arbitrary leftmost forwarded headers. [Render forwards client information through its ingress](https://render.com/articles/how-render-handles-ddos-attacks); the exact deployed chain has not been inspected from this local task. Before live use, verify the trusted hop count for your service's ingress: confirm two independent clients get separate rate-limit budgets and spoofing extra leftmost `X-Forwarded-For` entries cannot reset one client's budget. If the nearest forwarded address is another proxy, the conservative default may group clients together. Set an explicit higher count only after verifying all paths and header sanitation. No diagnostic IP endpoint is exposed.
+
+### Firebase build and manual verification
+
+Firebase continues serving `frontend/dist` with the existing SPA rewrite. Build-time variables are `VITE_API_BASE_URL` (real Render HTTPS API URL ending `/api`), `VITE_GOOGLE_MAPS_API_KEY` (restricted browser key) and `VITE_GOOGLE_MAPS_MAP_ID`. No server ADC, Gemini key or database URL belongs in frontend variables. Existing Firebase configuration/project selection was not changed by this enhancement.
+
+Manual checklist after separately authorized setup/build:
+
+1. Confirm missing Maps key/ID leaves the dashboard usable. With configured values, check eight reference markers, info windows, ranking → map focus, marker → District Intelligence, and mobile layout.
+2. In HTTPS Chrome/Edge, choose each voice language, allow the microphone, Stop, and review the transcript. Repeat with existing text; confirm it appends and invalidates a prior preview.
+3. Check denied permission, silence, unsupported browser, 45-second automatic stop, provider failure, and rate-limit feedback. Confirm the microphone indicator turns off after Stop and navigating away.
+4. Confirm voice alone never calls Gemini or creates a request. Analyze and Submit remain separate actions; perform a real submission only when explicitly intended.
+5. Confirm Census/JJM provenance, prototype disclaimers, and the subtle developer credit remain visible. Real Maps/Speech calls were not performed by automated tests.
+
+The dashboard includes a two-step demonstration form. Choose a district, enter up to 5,000 JavaScript string characters, and select **Analyze Request**. This calls `/api/citizen-requests/analyze` without saving. English, Kannada and Hindi examples only populate the textarea. Review the interpretation before selecting **Submit Request**. Editing text or changing district invalidates the preview and requires reanalysis with the selected district context.
 
 Submission sends only `districtId`, reviewed `text` and `channel: TEXT` to the existing create endpoint. The backend reanalyzes and validates the text; the final stored result may differ and is displayed explicitly. After HTTP 201 the dashboard reloads its district requests, totals and analytics without a full-page refresh. A failed dashboard refresh preserves the saved confirmation and offers a GET-only refresh. Browser retries are manual; ambiguous submission network failures warn users to check records before retrying, because the API does not provide idempotency keys.
 
@@ -525,7 +569,7 @@ Use **Root Directory `frontend`**, Vite preset, install `npm ci`, build `npm run
 VITE_API_BASE_URL=https://BACKEND-HOST/api
 ```
 
-Set this to the authorized Render HTTPS URL for each Vercel environment before building. Production builds fail for missing, localhost, non-HTTPS, or credential-bearing URLs. The development server keeps its localhost default. The frontend uses a build-time value, so rebuild when changing it; see [Vercel Vite configuration](https://vercel.com/docs/frameworks/frontend/vite). Add the corresponding Vercel origin to Render's CORS allowlist. Leaflet/OSM needs no deployment secret; retain visible attribution. No hosting configuration is needed for extra routes because the current application serves only `/`.
+Set this to the authorized Render HTTPS URL for each Vercel environment before building. Production builds fail for missing, localhost, non-HTTPS, or credential-bearing URLs. The development server keeps its localhost default. The frontend uses a build-time value, so rebuild when changing it; see [Vercel Vite configuration](https://vercel.com/docs/frameworks/frontend/vite). Add the corresponding Vercel origin to Render's CORS allowlist. For Google Maps also supply the restricted browser key and Map ID described above; retain visible attribution. No hosting configuration is needed for extra routes because the current application serves only `/`.
 
 For a local production **build check only**, a process-specific, non-live placeholder URL can be used without altering `.env`:
 
@@ -536,3 +580,36 @@ Remove-Item Env:VITE_API_BASE_URL
 ```
 
 That example build is not a deployable backend configuration. Configure the actual authorized backend URL in Vercel later. Census remains historical **2011** context, JJM reports connections through **21/09/2026**, and baseline citizen requests remain fictional. All scores/planning insights remain prototype demonstrations.
+
+### Citizen Demand Intelligence
+
+`GET /api/analytics/citizen-priorities` is read-only and returns `{ success: true, data: { totalRequests, categoryBreakdown, urgencyBreakdown, areaTypeBreakdown, districtBreakdown, recentRequests } }`. It includes all eight civic categories and RURAL, URBAN and UNKNOWN requests. Breakdown entries contain their category/urgency/areaType, count, and percentage of all stored requests (rounded to two decimals). Null urgency is counted separately as UNSPECIFIED. Fixed enum order is used for these breakdowns; districts use ascending ID, including zero-request districts. Recent requests are limited to five, ordered by createdAt descending then ID descending, and expose only district/category/urgency/area/time metadata. Text, generated summaries, locations and coordinates are omitted for privacy.
+
+The dashboard shows general demand counts without scores, and refreshes them alongside rural-water analytics after submission. An urban WATER or non-WATER request contributes to general counts, but not the existing rural WATER score. Rural Water Evidence Analysis retains the original Census 2011 rural population, official JJM coverage, min-max normalization, weights and thresholds. Neither general counts nor prototype water scores are AI predictions or official government rankings.
+
+The prototype baseline contains synthetic requests. New user submissions may coexist with them; no per-record origin distinction is inferred from IDs or AI metadata. Distribution is not representative of Karnataka's population. General analytics reads the existing database only and makes no Gemini calls or database writes.
+
+## Historical Karnataka settlement resolution
+
+The registry is built only from the supplied official Census PCA workbooks:
+
+- `backend/data/raw/census-settlements/2011-IndiaStateDistSbDistVill-0000.xlsx`
+- `backend/data/raw/census-settlements/2011-IndiaStateDistSbDistTwn-0000.xlsx`
+
+Both have `Data` and `Record Structure` sheets, with headers in Data row 1. Geographic fields are identified by their header names: State, District, Subdistt, Town/Village, Ward, EB, Level, Name and TRU. Parent DISTRICT and SUB-DISTRICT Total rows supply names keyed by their codes. Only state 29, exact VILLAGE/Rural or TOWN/Urban rows with zero Ward/EB are retained. No population threshold or place-name pattern determines classification.
+
+From the backend directory run `npm run import:settlements -- --dry-run`, then `npm run import:settlements`. Neither command connects to the database. The streaming JavaScript reader is necessary because the 334 MB village XLSX expands to over 2 GB of worksheet XML. Raw files stay ignored and are never changed. SHA-256 source hashes and shared source/year provenance are recorded in the tracked processed JSON. Runtime reads only this Karnataka registry, not the all-India workbooks. Direct ZIP/XML dependencies were already transitive dependencies of the existing workbook reader.
+
+The supplied sources contain 29,340 Karnataka village rows and 371 town rows (347 unique town codes), across 30 historical districts. Town+outgrowth aggregates and core towns sometimes share a code; BBMP also has rows across subdistricts. Preserve source rows and reconcile those variants by Census code at runtime. Exact duplicate rows, inconsistent codes or missing parents fail import. Terminal inspected administrative suffixes (CMC, TMC, TP, CT, M Corp., NAC, CB, optional + OG and Part) provide explicit base-name aliases; the source name remains unchanged. Different codes with the same district-scoped normalized name remain ambiguous, even when their types agree.
+
+The shared resolver runs after validated Gemini analysis for both preview and creation. Explicit AI RURAL/URBAN is preserved. Only UNKNOWN with a named location and a Karnataka district can be enriched. Matching uses Unicode NFKC, lowercase and punctuation/whitespace normalization, never substring matching or fuzzy matching. No automatic transliteration is used; unmatched Kannada/Hindi names remain UNKNOWN. Analyze accepts optional validated districtId; without it, behavior remains unchanged. The frontend supplies the selected ID and invalidates preview when it changes. Submitting still performs fresh Gemini analysis; identical AI output and district context receive identical resolution rules.
+
+Name-only crosswalks: Bangalore → Bengaluru Urban, Bangalore Rural → Bengaluru Rural, Mysore → Mysuru, Tumkur → Tumakuru, Belgaum → Belagavi, Bijapur → Vijayapura, Gulbarga → Kalaburagi, Bellary → Ballari, Shimoga → Shivamogga and Chikmagalur → Chikkamagaluru. Existing project Census mappings and the [MHA 2014 naming record](https://www.mha.gov.in/MHA1/Par2017/pdfs/par2014-pdfs/ls-161214/3797.pdf) underpin these spelling aliases. They do not reconcile changed district boundaries. Original Census district spellings are also accepted.
+
+Vijayanagara was formed after 2011 from Bellary/Ballari territory ([district history](https://vijayanagara.nic.in/en/history/)). No verified settlement-level current-boundary crosswalk is supplied: UNKNOWN stays UNKNOWN for that district. A modern district name is not proof that every former district settlement still belongs to it.
+
+A separate municipal-locality supplement contains exactly Uttarahalli and Jayanagar, scoped to Bengaluru Urban/Bangalore, backed by the [BBMP zonal classification](https://site.bbmp.gov.in/zonalclassification.html). These URBAN overrides are explicitly municipal evidence, not Census town classifications, and only apply to exact locality matches when AI says UNKNOWN. No inference is made for “near Uttarahalli”, broader addresses or similarly named places elsewhere. New aliases require reviewed evidence; no individual request adds aliases automatically.
+
+Census settlement classification is historical **2011** administrative context, not guaranteed current municipal status or a live boundary service. Registry provenance is shared at file level; municipal provenance lives in its separate configuration. With no schema change, a stored areaType alone does not prove whether AI, Census or municipal evidence supplied it. Existing records are not reprocessed. The statewide registry does not expand selectable districts or the eight-district Census/JJM water dataset. Resolved URBAN and UNKNOWN still contribute to general Citizen Demand, while only RURAL WATER is eligible for existing rural-water scoring. Scoring and official population/coverage values are unchanged.
+
+Observed ambiguity examples: Mandya has Gondihalli villages in both Krishnarajpet and Nagamangala; Hassan has multiple Haralahalli villages as well as Haralahalli (CT). Bare names remain UNKNOWN. A full, unique Census name such as Haralahalli (CT) can match. Positive tests instead use unambiguous Madapuranala (Mandya), K. Basavanahalli (Mysore), Hirimande (Hassan), Hadnal (Belgaum) and Jamga Khandala (Gulbarga), together with towns in those districts.

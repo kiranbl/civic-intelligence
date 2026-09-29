@@ -32,21 +32,24 @@ test('districts populate with explicit selection; empty and whitespace text bloc
   await enter(); fireEvent.change(screen.getByLabelText(/Request text/), { target: { value: '  ' } });
   expect(screen.getByRole('button', { name: 'Analyze Request' }).disabled).toBe(true); expect(calls).toHaveLength(0);
 });
-test('analyze sends only text and shows preview/null location with zero creates', async () => {
+test('analyze sends text and selected district and shows preview/null location with zero creates', async () => {
   mount(); await preview(); expect(calls).toHaveLength(1);
   expect(calls[0].url.endsWith('/citizen-requests/analyze')).toBe(true);
-  expect(JSON.parse(calls[0].options.body)).toEqual({ text: 'Village water has stopped.' });
+  expect(JSON.parse(calls[0].options.body)).toEqual({ text: 'Village water has stopped.', districtId: 2 });
   expect(screen.getByText('No specific location mentioned')).toBeTruthy(); expect(screen.getByText('gemini-3.6-flash')).toBeTruthy(); expect(onSubmitted).not.toHaveBeenCalled();
 });
 test('text changes invalidate preview and require reanalysis', async () => {
   mount(); await preview(); fireEvent.change(screen.getByLabelText(/Request text/), { target: { value: 'Different water problem' } });
   expect(screen.queryByRole('button', { name: 'Submit Request' })).toBeNull(); expect(screen.queryByRole('heading', { name: 'AI Interpretation' })).toBeNull();
 });
-test('submit uses exact reviewed text and latest district, not preview metadata; shows final differences', async () => {
+test('district change invalidates preview; reanalysis and submit share selected district', async () => {
   mount(); await preview(); fireEvent.change(screen.getByRole('combobox', { name: /District/ }), { target: { value: '7' } });
+  expect(screen.queryByRole('button', { name: 'Submit Request' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Analyze Request' })); await screen.findByRole('heading', { name: 'AI Interpretation' });
+  expect(JSON.parse(calls[1].options.body).districtId).toBe(7);
   fireEvent.click(screen.getByRole('button', { name: 'Submit Request' })); await screen.findByText('Request submitted successfully');
-  expect(JSON.parse(calls[1].options.body)).toEqual({ districtId: 7, text: 'Village water has stopped.', channel: 'TEXT' });
-  expect(calls).toHaveLength(2); expect(onSubmitted).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(calls[2].options.body)).toEqual({ districtId: 7, text: 'Village water has stopped.', channel: 'TEXT' });
+  expect(calls).toHaveLength(3); expect(onSubmitted).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/Request #123 · Kolar/)).toBeTruthy(); expect(screen.getByText(/stored result differs/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Submit Request' })).toBeNull();
 });
@@ -78,15 +81,19 @@ test('successful create refreshes dashboard count and analytics without losing s
     hits.push(url);
     if (url.endsWith('/analyze')) return response(analysis);
     if (options.method === 'POST') { created = true; return response(final, 201); }
+    if (url.endsWith('/citizen-priorities')) return response({totalRequests:created?2:1,categoryBreakdown:[{category:'WATER',count:created?2:1,percentage:100}],urgencyBreakdown:[],areaTypeBreakdown:[{areaType:'URBAN',count:created?2:1,percentage:100}],districtBreakdown:[{districtId:2,districtName:'Bengaluru Rural',totalRequests:created?2:1}],recentRequests:[]});
     if (url.endsWith('/districts')) return response([districts[0]]);
     if (url.endsWith('/requests')) return response(created ? [{id:1},{id:123}] : [{id:1}]);
     if (url.endsWith('/water-priority')) return { ok:true, json:async()=>({success:true,data:[{districtId:2,districtName:'Bengaluru Rural',state:'Karnataka',ruralPopulation:1000,ruralWaterRequestCount:created?2:1,ruralWaterRequestsPer100k:created?200:100,ruralFhtcCoverage:50,infrastructureGap:50,demandIndex:100,priorityScore:created?75:60,priorityLevel:created?'VERY_HIGH':'HIGH',dataCompleteness:'COMPLETE'}],methodology:{demandWeight:.5,infrastructureGapWeight:.5}}) };
     return response([]);
   });
-  render(<Home />); await screen.findByRole('combobox', { name: /District/ }); await preview(); fireEvent.click(screen.getByRole('button',{name:'Submit Request'})); await screen.findByText('Request submitted successfully');
+  render(<Home />); await screen.findByText('From citizen voices to development intelligence'); fireEvent.click(screen.getByRole('tab', { name: 'Rural Water' })); fireEvent.click(screen.getByRole('tab', { name: 'Submit Request' })); await screen.findByRole('combobox', { name: /District/ }); await preview(); fireEvent.click(screen.getByRole('button',{name:'Submit Request'})); await screen.findByText('Request submitted successfully');
   await waitFor(() => expect(document.querySelector('.priority-score').textContent).toBe('75.00'));
-  expect(document.querySelectorAll('.summary-card strong')[1].textContent).toBe('2');
+  expect(document.querySelectorAll('.summary-card strong')[0].textContent).toBe('2');
   expect(hits.filter(u=>u.endsWith('/water-priority'))).toHaveLength(2);
+  expect(hits.filter(u=>u.endsWith('/citizen-priorities'))).toHaveLength(2);
+  fireEvent.click(screen.getByRole('tab', { name: 'Overview' })); expect(screen.getByRole('heading', {name:'Total citizen requests'}).parentElement.textContent).toContain('2'); fireEvent.click(screen.getByRole('tab', { name: 'Rural Water' }));
+  expect(screen.getByText(/Only rural WATER requests contribute to this score/)).toBeTruthy();
   await waitFor(() => expect(hits.filter(u=>u.endsWith('/requests'))).toHaveLength(4));
 });
 import { readdirSync, readFileSync } from 'node:fs';

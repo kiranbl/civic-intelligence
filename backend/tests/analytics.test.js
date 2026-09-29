@@ -116,3 +116,21 @@ test('analytics database failure uses the centralized safe error response', asyn
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { success: false, message: 'Internal server error' });
 });
+
+ test('resolved settlement types feed existing rural WATER filter and all general demand buckets', async () => {
+  const { resolveSettlement } = await import('../src/services/settlementResolver.service.js');
+  const { getWaterPriority } = await import('../src/services/waterPriority.service.js');
+  const { summarizeCitizenDemand } = await import('../src/services/citizenPriorities.service.js');
+  const requests = [['Madapuranala','Mandya'],['Uttarahalli','Bengaluru Urban'],['Unlisted locality','Mandya']].map(([locationText,name],i)=>({
+    id:i+1,category:'WATER',urgency:'HIGH',createdAt:new Date('2026-09-21'),
+    ...resolveSettlement({areaType:'UNKNOWN',locationText},{name,state:'Karnataka'})
+  }));
+  prisma.district.findMany=async query=>{
+    const filter=query.select._count.select.requests.where;
+    assert.deepEqual(filter,{category:'WATER',areaType:'RURAL'});
+    return [{id:1,name:'Fixture',state:'Karnataka',ruralPopulation:100000,_count:{requests:requests.filter(r=>r.category===filter.category&&r.areaType===filter.areaType).length},infrastructure:[{value:60}]}];
+  };
+  assert.equal((await getWaterPriority()).data[0].ruralWaterRequestCount,1);
+  const general=summarizeCitizenDemand([{id:1,name:'Fixture',requests}]);
+  assert.equal(general.totalRequests,3);assert.deepEqual(general.areaTypeBreakdown.map(r=>r.count),[1,1,1]);
+ });

@@ -9,6 +9,10 @@ coverage/
 logs/
 .vite/
 .cache/
+.firebase/
+# Server-only Google ADC files must stay outside the repository.
+*service-account*.json
+*-credentials.json
 .idea/
 .vscode/
 *.suo

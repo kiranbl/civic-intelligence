@@ -20,9 +20,11 @@
     "import:census": "node scripts/import/censusPopulation.js",
     "import:jjm": "node scripts/import/jjmCoverage.js",
     "smoke:gemini": "node scripts/smoke/gemini.js",
-    "smoke": "node scripts/smoke/gemini.js"
+    "smoke": "node scripts/smoke/gemini.js",
+    "import:settlements": "node scripts/import/settlementRegistry.js"
   },
   "dependencies": {
+    "@google-cloud/speech": "^8.1.0",
     "@google/genai": "^2.24.0",
     "@prisma/client": "^6.19.3",
     "ajv": "^8.20.0",
@@ -30,7 +32,11 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.1",
     "express": "^5.2.1",
-    "read-excel-file": "^9.3.10"
+    "express-rate-limit": "^8.7.0",
+    "multer": "^2.4.0",
+    "read-excel-file": "^9.3.10",
+    "saxen": "^11.2.0",
+    "unzipper-esm": "^0.13.3"
   },
   "devDependencies": {
     "prisma": "^6.19.3"

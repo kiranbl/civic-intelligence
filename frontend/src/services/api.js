@@ -7,13 +7,15 @@ async function get(path, signal) {
   return body;
 }
 export async function loadDashboard(signal) {
-  const [health, districts, analytics] = await Promise.allSettled([
+  const [health, districts, analytics, citizenDemand] = await Promise.allSettled([
     get('/health', signal), get('/districts', signal), get('/analytics/water-priority', signal),
+    get('/analytics/citizen-priorities', signal),
   ]);
   const districtRows = districts.status === 'fulfilled' ? districts.value.data : [];
   const analyticsValue = analytics.status === 'fulfilled' ? analytics.value : { data: [], methodology: null };
   const requests = await Promise.allSettled(districtRows.map(d => get('/districts/' + d.id + '/requests', signal)));
-  return { connected: health.status === 'fulfilled', districts: districtRows, analytics: analyticsValue, districtsFailed: districts.status !== 'fulfilled', analyticsFailed: analytics.status !== 'fulfilled',
+  return { citizenDemand: citizenDemand.status === 'fulfilled' ? citizenDemand.value.data : null,
+    connected: health.status === 'fulfilled', districts: districtRows, analytics: analyticsValue, districtsFailed: districts.status !== 'fulfilled', analyticsFailed: analytics.status !== 'fulfilled',
     requestCount: districts.status === 'fulfilled' && requests.every(r => r.status === 'fulfilled') ? requests.reduce((sum, r) => sum + r.value.data.length, 0) : null };
 }
 
@@ -53,8 +55,25 @@ async function post(path, body, expectedStatus) {
       : 'The analysis response could not be read. Please try again.');
   }
 }
-export const analyzeRequest = text => post('/citizen-requests/analyze', { text }, 200);
+export const analyzeRequest = (text, districtId) => post('/citizen-requests/analyze', { text, ...(districtId === undefined ? {} : { districtId }) }, 200);
 export const submitRequest = (districtId, text) => post('/citizen-requests', { districtId, text, channel: 'TEXT' }, 201);
+
+export async function transcribeRecording(audio, languageCode, signal, districtName) {
+  const form = new FormData(); form.append('audio', audio, 'recording.webm'); form.append('languageCode', languageCode);
+  if (districtName) form.append('districtName', districtName);
+  let response;
+  try {
+    response = await fetch(baseUrl + '/speech/transcribe', { method: 'POST', body: form, signal: AbortSignal.any([signal, AbortSignal.timeout(35000)]) });
+  } catch { throw new Error('Transcription temporarily unavailable'); }
+  if (response.status === 429) throw new Error('Too many transcription requests. Please try again later.');
+  if (response.status === 413) throw new Error('Recording is too large. Please record a shorter message.');
+  if (!response.ok) throw new Error('Transcription temporarily unavailable');
+  try {
+    const body = await response.json();
+    if (!body.success || typeof body.data?.transcript !== 'string' || body.data.transcript.length > 5000) throw Error();
+    return body.data.transcript;
+  } catch { throw new Error('Transcription temporarily unavailable'); }
+}
 
 export async function getDistrictRequests(id, signal) {
   const body = await get('/districts/' + id + '/requests', signal);

@@ -15,6 +15,14 @@ export function validateRequestAnalysis(raw, originalText) {
   }
   if (!validate(result)) throw new ServiceError('AI_INVALID_OUTPUT');
   result.locationText = sanitizeLocationText(result.locationText);
+  // Optional for compatibility with older structured results. Never accept
+  // a romanized location without an evidenced original-script place.
+  if (result.locationTextLatin !== undefined && result.locationTextLatin !== null) {
+    result.locationTextLatin = result.locationTextLatin.trim();
+    if (!result.locationTextLatin || !/^[\p{Script=Latin}\p{M}\p{N}\p{P}\p{Zs}]+$/u.test(result.locationTextLatin)
+      || !/\p{Script=Latin}/u.test(result.locationTextLatin)) throw new ServiceError('AI_INVALID_OUTPUT');
+    if (result.locationText === null) result.locationTextLatin = null;
+  }
   if ((result.category === 'WATER' && result.subcategory !== null && !WATER_SUBCATEGORIES.includes(result.subcategory)) || !result.summaryEnglish.trim() || result.summaryEnglish.length > 1000
     || (result.subcategory !== null && !/^[A-Z][A-Z0-9_]{0,63}$/.test(result.subcategory))
     || (result.locationText !== null && (!result.locationText.trim() || result.locationText.length > 191
