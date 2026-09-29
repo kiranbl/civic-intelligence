@@ -112,3 +112,18 @@ test('pending create prevents duplicate saves', async () => {
   fireEvent.click(button); fireEvent.click(button); expect(fetch).toHaveBeenCalledTimes(2); expect(button.disabled).toBe(true);
   resolve(response(final, 201)); await screen.findByText('Request submitted successfully'); expect(onSubmitted).toHaveBeenCalledTimes(1);
 });
+
+for (const stage of ['analyze', 'submit']) test(`civic rejection during ${stage} preserves editable text and district`, async () => {
+  mount();
+  if (stage === 'submit') await preview(); else await enter();
+  const before = screen.getByLabelText(/Request text/).value;
+  const district = screen.getByRole('combobox', { name: /District/ }).value;
+  fetch.mockResolvedValue(response({ message: 'INTERNAL PROVIDER DETAILS' }, 422));
+  fireEvent.click(screen.getByRole('button', { name: stage === 'submit' ? 'Submit Request' : 'Analyze Request' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toBe("We couldn't identify a civic or infrastructure issue in this request. Please describe the local problem, location, and what is affected.");
+  expect(screen.getByLabelText(/Request text/).value).toBe(before);
+  expect(screen.getByRole('combobox', { name: /District/ }).value).toBe(district);
+  expect(screen.queryByText('Request submitted successfully')).toBeNull();
+  expect(onSubmitted).not.toHaveBeenCalled();
+});

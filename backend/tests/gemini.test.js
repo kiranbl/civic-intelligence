@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => { process.env = originalEnvironment; });
 
-const output = { language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'The village pipeline is broken.', locationText: null, confidence: 0.94 };
+const output = { isCivicRequest: true, language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'The village pipeline is broken.', locationText: null, confidence: 0.94 };
 const config = () => ({ apiKey: 'test-only-placeholder', model: 'gemini-3.8-flash' });
 const candidate = text => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text }] } }] });
 

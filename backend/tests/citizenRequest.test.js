@@ -10,7 +10,7 @@ import { demoDistricts, demoRequests } from '../prisma/demoData.js';
 
 let server, base, aiCalls, writes, lookups;
 const restore = [];
-const output = { language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'The village pipeline has been broken for two weeks, leaving about 40 houses without water.', locationText: null, confidence: 0.94 };
+const output = { isCivicRequest: true, language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'The village pipeline has been broken for two weeks, leaving about 40 houses without water.', locationText: null, confidence: 0.94 };
 function replace(object, name, fn) { const previous = object[name]; object[name] = fn; restore.push(() => { object[name] = previous; }); }
 async function post(path, body) { const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() }; }
 before(async () => { server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); base = `http://127.0.0.1:${server.address().port}/api/citizen-requests`; });
@@ -151,4 +151,29 @@ test('romanized preview and create use identical district-scoped resolution with
  const created=await post('',{text,districtId:1,channel:'TEXT'});
  assert.equal(created.status,201);assert.equal(created.body.data.areaType,preview.body.data.areaType);
  assert.equal(writes.length,1);assert.equal('locationTextLatin' in writes[0].data,false);assert.equal('method' in preview.body.data,false);
+});
+
+for(const text of ['aaaaaaa','????????','123456789','asdfghjkl','what is the capital of France','write me a poem','SELECT * FROM users;','DROP TABLE citizen_requests;','function hello() { return true; }',"<script>alert('test')</script>",'hello hello hello','{"foo":true}']) test(`invalid civic content rejected in preview and create: ${text}`,async()=>{
+ replace(geminiClient,'analyze',async value=>{aiCalls.push(value);return {text:JSON.stringify({...output,isCivicRequest:false,category:'OTHER',subcategory:null,areaType:'UNKNOWN'}),model:'mock'};});
+ for(const path of ['/analyze','']){
+ const result=await post(path,{districtId:1,text,...(path===''?{channel:'TEXT'}:{})});
+ assert.equal(result.status,422);assert.equal(result.body.message,'Please describe a local civic or infrastructure problem.');assert.equal(writes.length,0);
+ }
+ if(['aaaaaaa','????????','123456789'].includes(text))assert.equal(aiCalls.length,0);
+});
+for(const [text,language,category] of [['No water for 3 days','en','WATER'],['ನೀರು ಬರುತ್ತಿಲ್ಲ','kn','WATER'],['पानी नहीं आ रहा है','hi','WATER'],['Road is broken','en','ROADS'],['The government hospital lacks drinking water','en','HEALTHCARE'],['The public park gate is broken','en','OTHER']]) test(`meaningful short/multilingual civic input remains accepted: ${text}`,async()=>{
+ replace(geminiClient,'analyze',async()=>({text:JSON.stringify({...output,isCivicRequest:true,language,category,subcategory:null}),model:'mock'}));
+ for(const path of ['/analyze','']) assert.equal((await post(path,{districtId:1,text,...(path===''?{channel:'VOICE'}:{})})).status,path===''?201:200);
+ assert.equal(writes.length,1);assert.equal(writes[0].data.originalText,text);
+});
+test('successful preview cannot bypass a rejecting final reanalysis',async()=>{
+ assert.equal((await post('/analyze',{text:'No water for 3 days',districtId:1})).status,200);
+ replace(geminiClient,'analyze',async()=>({text:JSON.stringify({...output,isCivicRequest:false}),model:'mock'}));
+ assert.equal((await post('',{text:'No water for 3 days',districtId:1,channel:'TEXT'})).status,422);assert.equal(writes.length,0);
+});
+test('missing or nonboolean civic verdict fails closed without writes',async()=>{
+ for(const verdict of [undefined,'true',null]){
+ replace(geminiClient,'analyze',async()=>({text:JSON.stringify({...output,isCivicRequest:verdict}),model:'mock'}));
+ assert.equal((await post('',{text:'No water for 3 days',districtId:1,channel:'TEXT'})).status,502);assert.equal(writes.length,0);
+ }
 });

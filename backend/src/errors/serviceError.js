@@ -1,4 +1,5 @@
 const errors = {
+  INVALID_CIVIC_CONTENT: [422, 'Please describe a local civic or infrastructure problem.'],
   SPEECH_INPUT: [400, 'Provide one audio file and a supported language: en-IN, kn-IN, or hi-IN'],
   SPEECH_FORMAT: [400, 'Use a WebM Opus audio recording'],
   SPEECH_SIZE: [413, 'Audio recording is too large (maximum 1 MiB)'],

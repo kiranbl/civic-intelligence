@@ -1,9 +1,13 @@
 import { geminiClient } from '../clients/gemini.client.js';
 import { validateRequestText } from '../validators/citizenRequest.validator.js';
 import { validateRequestAnalysis } from '../validators/requestAnalysis.validator.js';
+import { validateCitizenContent } from '../validators/citizenContent.validator.js';
+import { ServiceError } from '../errors/serviceError.js';
 
 export async function analyzeCitizenText(input, client = geminiClient) {
-  const text = validateRequestText(input);
+  const text = validateCitizenContent(validateRequestText(input));
   const response = await client.analyze(text);
-  return { ...validateRequestAnalysis(response.text, text), model: response.model };
+  const analysis = validateRequestAnalysis(response.text, text);
+  if (!analysis.isCivicRequest) throw new ServiceError('INVALID_CIVIC_CONTENT');
+  return { ...analysis, model: response.model };
 }

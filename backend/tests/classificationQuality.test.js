@@ -5,7 +5,7 @@ import { createGeminiClient } from '../src/clients/gemini.client.js';
 import { analyzeCitizenText } from '../src/services/requestAnalysis.service.js';
 import { CITIZEN_REQUEST_INSTRUCTION } from '../src/prompts/citizenRequest.prompt.js';
 
-const output = { language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'Water service is disrupted.', locationText: null, confidence: 0.9 };
+const output = { isCivicRequest: true, language: 'en', category: 'WATER', subcategory: 'WATER_SUPPLY_INTERRUPTION', urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'Water service is disrupted.', locationText: null, confidence: 0.9 };
 for (const location of ['our village', 'ನಮ್ಮ ಗ್ರಾಮದ', 'हमारे गांव', 'village', 'locality', 'town', 'area', 'गांव', 'गाँव', 'इलाके', 'क्षेत्र', 'ಗ್ರಾಮ', 'ಗ್ರಾಮದ', 'ನಮ್ಮ ಗ್ರಾಮ', 'ಊರು', 'ಪ್ರದೇಶ']) {
   test(`generic model location ${location} becomes null`, () => {
     assert.equal(validateRequestAnalysis(JSON.stringify({ ...output, locationText: location }), `Water needed in ${location}`).locationText, null);

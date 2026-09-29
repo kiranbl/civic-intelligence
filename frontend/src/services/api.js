@@ -38,6 +38,7 @@ async function post(path, body, expectedStatus) {
       400: 'Please check the selected district and request text.',
       404: 'The selected district is unavailable. Refresh the dashboard and select a district again.',
       413: 'The request is too long. Please use no more than 5,000 characters.',
+      422: "We couldn't identify a civic or infrastructure issue in this request. Please describe the local problem, location, and what is affected.",
       429: 'The AI service is temporarily busy. Please try again.',
       503: 'The AI service is temporarily busy. Please try again.',
       504: 'The AI service is temporarily busy. Please try again.',

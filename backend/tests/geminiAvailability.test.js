@@ -4,7 +4,7 @@ import { createGeminiClient } from '../src/clients/gemini.client.js';
 import { analyzeCitizenText } from '../src/services/requestAnalysis.service.js';
 
 const primary = 'gemini-3.8-flash', fallback = 'gemini-3.6-flash';
-const output = { language: 'en', category: 'WATER', subcategory: null, urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'Village needs water.', locationText: null, confidence: 0.9 };
+const output = { isCivicRequest: true, language: 'en', category: 'WATER', subcategory: null, urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'Village needs water.', locationText: null, confidence: 0.9 };
 const response = raw => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: raw }] } }] });
 function setup(failures, raw = JSON.stringify(output)) {
   const calls = [], waits = [], logs = [];

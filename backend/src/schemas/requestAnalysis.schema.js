@@ -3,8 +3,9 @@
 export const REQUEST_ANALYSIS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['language', 'category', 'subcategory', 'urgency', 'areaType', 'summaryEnglish', 'locationText', 'confidence'],
+  required: ['isCivicRequest', 'language', 'category', 'subcategory', 'urgency', 'areaType', 'summaryEnglish', 'locationText', 'confidence'],
   properties: {
+    isCivicRequest: { type: 'boolean', description: 'True only for a meaningful local civic or public-infrastructure report or request.' },
     language: { type: 'string', enum: ['en', 'kn', 'hi', 'other'] },
     category: { type: 'string', enum: ['WATER', 'ROADS', 'HEALTHCARE', 'EDUCATION', 'SANITATION', 'TRANSPORT', 'ELECTRICITY', 'OTHER'] },
     subcategory: { type: ['string', 'null'], description: 'Null or a short uppercase identifier, at most 64 characters, such as WATER_SUPPLY_INTERRUPTION.' },

@@ -5,7 +5,7 @@ import { createGeminiClient } from '../src/clients/gemini.client.js';
 import prisma from '../src/config/prisma.js';
 
 const context = { model: 'gemini-3.8-flash', apiKey: 'test-placeholder' };
-const output = { language: 'en', category: 'WATER', subcategory: null, urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'Village needs water.', locationText: null, confidence: 0.9 };
+const output = { isCivicRequest: true, language: 'en', category: 'WATER', subcategory: null, urgency: 'HIGH', areaType: 'RURAL', summaryEnglish: 'Village needs water.', locationText: null, confidence: 0.9 };
 test('smoke continues all languages after exhaustion, validates results and never writes to DB', async () => {
   const original = prisma.citizenRequest.create;
   let writes = 0;
