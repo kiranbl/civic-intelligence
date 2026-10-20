@@ -14,7 +14,7 @@ before(async () => {
   process.env.GOOGLE_CLOUD_PROJECT = 'speech-test-project';
   speechProvider.recognize = async (...args) => { calls.push(args); if (failure) throw failure; return [result]; };
   const app = express(); app.set('trust proxy', 1);
-  app.use('/api/speech', createSpeechRouter({ limit: 2 })); app.use(errorHandler);
+  app.use('/api/speech', createSpeechRouter({ limit: 2, enabled: () => true })); app.use(errorHandler);
   server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); base = `http://127.0.0.1:${server.address().port}`;
 });
 after(async () => {
@@ -119,7 +119,7 @@ for (const [environment, allowed] of [['production', 5], ['development', 30], ['
     let router;
     try {
       process.env.NODE_ENV = environment;
-      router = createSpeechRouter();
+      router = createSpeechRouter({ enabled: () => true });
     } finally {
       if (previous === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = previous;
@@ -141,3 +141,22 @@ for (const [environment, allowed] of [['production', 5], ['development', 30], ['
     } finally { await new Promise(resolve => local.close(resolve)); }
   });
 }
+
+test('speech flag is opt-in and disabled route requires no credentials or provider call', async () => {
+ const { speechToTextEnabled } = await import('../src/config/speech.js');
+ for (const value of [undefined, '', 'false', 'TRUE', '1', ' true ']) assert.equal(speechToTextEnabled({SPEECH_TO_TEXT_ENABLED:value}),false);
+ assert.equal(speechToTextEnabled({SPEECH_TO_TEXT_ENABLED:'true'}),true);
+ const oldFlag=process.env.SPEECH_TO_TEXT_ENABLED, oldProject=process.env.GOOGLE_CLOUD_PROJECT, oldCredentials=process.env.GOOGLE_APPLICATION_CREDENTIALS;
+ delete process.env.SPEECH_TO_TEXT_ENABLED;delete process.env.GOOGLE_CLOUD_PROJECT;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+ const app=express();app.use('/speech',createSpeechRouter());app.use(errorHandler);const local=app.listen(0,'127.0.0.1');await once(local,'listening');
+ try { const response=await fetch(`http://127.0.0.1:${local.address().port}/speech/transcribe`,{method:'POST'});assert.equal(response.status,503);assert.deepEqual(await response.json(),{success:false,message:'Voice transcription is currently disabled.'});assert.equal(calls.length,0); }
+ finally { await new Promise(r=>local.close(r));for(const [name,value] of [['SPEECH_TO_TEXT_ENABLED',oldFlag],['GOOGLE_CLOUD_PROJECT',oldProject],['GOOGLE_APPLICATION_CREDENTIALS',oldCredentials]]){if(value===undefined)delete process.env[name];else process.env[name]=value;} }
+});
+
+test('literal enabled environment flag preserves the retained mocked Speech route', async () => {
+ const previous=process.env.SPEECH_TO_TEXT_ENABLED;process.env.SPEECH_TO_TEXT_ENABLED='true';
+ const app=express();app.use('/speech',createSpeechRouter());app.use(errorHandler);
+ const local=app.listen(0,'127.0.0.1');await once(local,'listening');
+ try {const response=await fetch(`http://127.0.0.1:${local.address().port}/speech/transcribe`,{method:'POST',body:form()});assert.equal(response.status,200);assert.equal(calls.length,1);}
+ finally {await new Promise(r=>local.close(r));if(previous===undefined)delete process.env.SPEECH_TO_TEXT_ENABLED;else process.env.SPEECH_TO_TEXT_ENABLED=previous;}
+});

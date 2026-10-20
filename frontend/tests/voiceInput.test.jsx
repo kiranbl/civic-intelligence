@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 const districts = [{ id: 1, name: 'Mandya', state: 'Karnataka' }];
 let recorder, track, permission;
-beforeEach(() => {
+beforeEach(() => { vi.stubEnv('VITE_SPEECH_TO_TEXT_ENABLED', 'true');
   track = { stop: vi.fn(), onended: null };
   permission = vi.fn(async () => ({ getTracks: () => [track] }));
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: permission } });
@@ -17,7 +17,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true, data: { transcript: 'Water has stopped.' } }) })));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 const mount = () => render(<CitizenRequestForm districts={districts} onSubmitted={vi.fn()} />);
 test('Type and Speak share a desktop grid with a narrow-screen stack rule', () => {
   const { container } = mount();

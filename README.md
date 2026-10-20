@@ -1,24 +1,32 @@
 # Civic Intelligence
 
-Civic Intelligence is a multilingual AI-assisted citizen demand and infrastructure planning prototype, built for **Google Build with AI: Code for Communities** in the **AI for Digital Public Infrastructure & Governance** track.
+Civic Intelligence is a multilingual AI-assisted citizen demand and infrastructure planning prototype, built for **Google Build with AI: Code for Communities 2.0** in the **AI for Digital Public Infrastructure & Governance** track.
 
 **[Live Prototype](https://civic-intelligence-9d29a.web.app/)** · **[GitHub Repository](https://github.com/kiranbl/civic-intelligence)** · [Backend](https://civic-intelligence-api-jlh9.onrender.com)
 
-The working, deployed prototype accepts text and voice complaints in English, Kannada and Hindi. Google Speech-to-Text transcribes voice; Gemini produces structured request interpretations for human review. It aggregates general civic demand and combines rural WATER requests with official Census/JJM evidence, providing district-level geographic intelligence for evidence-informed governance. It is **not an official government system**.
+The current post-hackathon configuration accepts typed complaints in English, Kannada and Hindi. Gemini produces structured interpretations for human review. General civic demand, Census settlement resolution, Rural Water evidence, provenance and district intelligence remain available. It is **not an official government system**.
+
+## Post-Hackathon Deployment
+
+After completion of Google Build with AI: Code for Communities 2.0, Civic Intelligence uses a **downgraded post-hackathon version** to reduce ongoing cloud costs while preserving core analytical functionality. This repository prepares that lower-cost configuration; deployment is a separate manual operation.
+
+The original hackathon submission used Google Maps JavaScript API, Google Cloud Speech-to-Text V2 / Chirp 3, Google Gemini, Firebase Hosting, Render and Aiven MySQL. That original functionality remains available in Git history; the Speech implementation also remains in the current codebase.
+
+The current configuration replaces Google Maps with **Leaflet + OpenStreetMap**, disables live Speech-to-Text by default, and retains Gemini multilingual typed understanding, Citizen Demand Intelligence, Census settlement resolution, Rural Water Evidence Analysis, Census/JJM methodology and District Intelligence. Firebase Hosting, Render and Aiven MySQL are unchanged.
 
 ## Key features
 
-- Multilingual text input and English/Kannada/Hindi voice input using Google Cloud Speech-to-Text V2 / Chirp 3.
+- English/Kannada/Hindi typed input; optional retained Speech-to-Text V2 / Chirp 3, disabled by default.
 - Gemini structured civic-request analysis, human review before submission and civic-content validation before storage.
 - District-scoped Census settlement resolution with multilingual search hints and conservative spelling matching.
 - Citizen Demand Intelligence across all supported civic categories.
 - Rural Water Evidence Analysis with explainable prototype planning considerations.
-- Google Maps district intelligence, source provenance and visible methodology.
+- Leaflet/OpenStreetMap district intelligence, source provenance and visible methodology.
 - Deployed React/Vite frontend on Firebase Hosting, Express API on Render and Prisma/MySQL on Aiven.
 
 ## How it works
 
-1. Select a district and type a report, or record and review a voice transcript.
+1. Select a district and type a report, or, when explicitly enabled, record and review a voice transcript.
 2. Analyze: sanity checks and Gemini civic-content validation precede structured interpretation and district-scoped settlement resolution. Nothing is saved.
 3. Review/edit the interpretation. Editing text or changing district invalidates the preview.
 4. Submit: the backend independently re-analyzes/revalidates and stores one valid request. The final classification can differ from the preview and is displayed.
@@ -35,11 +43,11 @@ React + Vite — Firebase Hosting
   ↓
 Node.js + Express API — Render
   ├── Google Gemini: structured interpretation and civic validation
-  ├── Google Cloud Speech-to-Text V2 / Chirp 3: transcription
+  ├── Optional Speech-to-Text V2 / Chirp 3: retained, disabled by default
   ├── Prisma → Aiven MySQL: validated persistence
   └── Census/JJM evidence: deterministic analytics and planning
 
-Google Maps JavaScript API → frontend district reference visualization
+Leaflet + OpenStreetMap → frontend district reference visualization (no Google Maps key)
 ```
 
 JavaScript throughout, with plain CSS and native controls. Backend responsibilities follow routes → controllers → services → Prisma. Separate app/server modules support isolated HTTP tests. Maps displays district reference points, not citizen complaint coordinates.
@@ -240,7 +248,11 @@ Census settlement classification is historical **2011** administrative context, 
 
 Observed ambiguity examples: Mandya has Gondihalli villages in both Krishnarajpet and Nagamangala; Hassan has multiple Haralahalli villages as well as Haralahalli (CT). Gondihalli can now resolve RURAL by same-type consensus without a unique identity; bare Haralahalli remains UNKNOWN because rural and urban candidates coexist. A full, unique Census name such as Haralahalli (CT) can match. Positive tests instead use unambiguous Madapuranala (Mandya), K. Basavanahalli (Mysore), Hirimande (Hassan), Hadnal (Belgaum) and Jamga Khandala (Gulbarga), together with towns in those districts.
 
-## Speech-to-Text
+## Speech-to-Text (retained, disabled by default)
+
+Backend `SPEECH_TO_TEXT_ENABLED=false` and frontend `VITE_SPEECH_TO_TEXT_ENABLED=false` are the default. Only the literal string `true` enables either flag. While disabled, `/api/speech/transcribe` returns HTTP 503 with `{ "success": false, "message": "Voice transcription is currently disabled." }` before upload processing, rate-limit consumption or Google credential/client use. No Speech credentials are required for normal startup, health, typed Gemini workflows or analytics. The UI shows an inactive information card instead of microphone controls.
+
+To re-enable: set both flags to `true`, provide optional backend `GOOGLE_CLOUD_PROJECT` and Application Default Credentials (for example `GOOGLE_APPLICATION_CREDENTIALS` pointing to a private secret file), ensure API/IAM configuration, restart the backend and rebuild the frontend. Do not place these credentials in browser variables. Existing controller, service, route, configuration, VoiceInput and enabled-workflow tests remain. The following describes the retained **enabled** workflow.
 
 ### Optional microphone input
 
@@ -270,7 +282,7 @@ Uploads are limited to **1 MiB**, one audio file and one language field. WebM MI
 
 ### Speech credentials and paid-endpoint limits
 
-On Render retain `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/gcp-speech-service-account.json` and your configured `GOOGLE_CLOUD_PROJECT`. The mounted service-account JSON stays outside the repository. Local speech testing requires ADC or a local credential path outside the checkout; no JSON is provided or committed. Existing `DATABASE_URL`, CORS, Gemini configuration and production bootstrap remain unchanged. The Speech client is lazy: health and typed workflows do not require Speech credentials.
+Only when enabling Speech on Render, configure `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/gcp-speech-service-account.json` and your configured `GOOGLE_CLOUD_PROJECT`. The mounted service-account JSON stays outside the repository. Local speech testing requires ADC or a local credential path outside the checkout; no JSON is provided or committed. Existing `DATABASE_URL`, CORS, Gemini configuration and production bootstrap remain unchanged. The Speech client is lazy: health and typed workflows do not require Speech credentials.
 
 The speech route limits **5 attempts per client per 10 minutes in production**, **30 in development/test**, plus **60 attempts per process per 10 minutes**, before buffering audio or calling Google. IPv6 clients are grouped by subnet. Counts are memory-only and reset on restart; multiple instances have separate quotas. This reduces abuse risk but is not authentication or a global billing guarantee. Google project quotas remain the final external spending control.
 
@@ -278,7 +290,7 @@ The speech route limits **5 attempts per client per 10 minutes in production**, 
 
 ## District Intelligence mapping
 
-The supplementary map uses **Google Maps JavaScript API**, the official `@googlemaps/js-api-loader` and `AdvancedMarkerElement` (no deprecated legacy Marker). Set `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` at Vite build time. Restrict the public browser key to Maps JavaScript API and your frontend HTTP referrers. The key is intentionally browser-visible; never use a server/service-account credential here. Missing configuration leaves a friendly disabled map, while district analysis stays usable. Only maps, marker and core libraries are loaded: no Places, Geocoding, Routes or coordinate lookup calls.
+The supplementary map uses **Leaflet 1.9.4 + React Leaflet 5.0.0** and standard `https://tile.openstreetmap.org/{z}/{x}/{y}.png` tiles. No map key or Map ID is required. There is no runtime geocoding or complaint-location mapping. The original hackathon submission used Google Maps; the current renderer reuses the same verified coordinates and selection state.
 
 Select a ranking button or map marker to update District Intelligence. Initial bounds show all configured references, with zoom capped at 9 for the initial fit; later selections pan without changing zoom. Popups show district name, reference label, priority, score, coverage and rural WATER count. Marker letters and a selected star supplement priority colors. The ranking remains keyboard-accessible navigation when mapping is unavailable.
 
@@ -303,7 +315,7 @@ The dataset name remains **Ramanagara**. The UI retains the administrative note 
 
 ### Map failure handling and source attribution
 
-Loading is bounded at 20 seconds and failures stay inside the map area. Missing references omit only those markers. Existing OSM-sourced coordinates and their attribution remain; map imagery and controls are supplied by Google. All map tests mock the SDK, and no live coordinate requests are needed. District names, reference disclaimers, and analytics remain unchanged.
+Missing references omit only those markers. Tile failures show a safe notice; ranking/dropdown navigation and district context remain available. Visible © OpenStreetMap contributors attribution links to the OSM copyright page. Initial bounds fit all references with a maximum zoom of 9; selection pans without changing zoom. ResizeObserver, viewport resize and active-tab changes invalidate map size. Tests mock React Leaflet and make no tile requests. Standard OSM tiles depend on external availability and are not an offline or guaranteed-service map.
 
 ## Data sources & provenance
 
@@ -458,7 +470,7 @@ npm run dev
 
 Start `npm run dev` from `frontend/` in a second terminal and open the Vite URL. Bootstrap details and safety rules appear below. The optional development `npm run prisma:seed` instead uses fictional population/coverage fixtures before source imports; it is not the production initializer. Never reset an existing database to follow setup instructions.
 
-Repository layout: `frontend/src/components` holds dashboard/form/map/voice components; `pages/Home.jsx` owns navigation; `services` holds API/Maps clients. Backend `src` contains routes, controllers, services, validators, prompts, schemas and configuration; `prisma` contains models, migrations and demo fixtures; `scripts/import` contains source importers; `data/processed` contains deployment extracts and the settlement registry. Preserve ignored raw source files separately.
+Repository layout: `frontend/src/components` holds dashboard/form/map/voice components; `pages/Home.jsx` owns navigation; `services` holds API clients. Backend `src` contains routes, controllers, services, validators, prompts, schemas and configuration; `prisma` contains models, migrations and demo fixtures; `scripts/import` contains source importers; `data/processed` contains deployment extracts and the settlement registry. Preserve ignored raw source files separately.
 
 ## Production deployment: Firebase → Render → Aiven
 
@@ -531,22 +543,21 @@ firebase use civic-intelligence-9d29a
 cd frontend
 npm ci
 $env:VITE_API_BASE_URL = 'https://civic-intelligence-api-jlh9.onrender.com/api'
-$env:VITE_GOOGLE_MAPS_API_KEY = 'YOUR_HTTP_REFERRER_RESTRICTED_BROWSER_KEY'
-$env:VITE_GOOGLE_MAPS_MAP_ID = 'YOUR_MAP_ID'
+$env:VITE_SPEECH_TO_TEXT_ENABLED = 'false'
 npm run build
 cd ..
 firebase deploy --only hosting
 ```
 
-Replace the Maps placeholders locally before a real deployment; no real key belongs in this README. These three build-time variables configure the deployed frontend. The production build rejects missing, localhost, non-HTTPS or credential-bearing API URLs. Missing Maps credentials leave the map disabled rather than blocking other views. Rebuild when changing Vite environment values. Add `https://civic-intelligence-9d29a.web.app` (and any other intentionally used exact frontend origin) to Render's `CORS_ALLOWED_ORIGINS` and the Maps key's HTTP-referrer restrictions.
+The frontend requires `VITE_API_BASE_URL` for a production build; `VITE_SPEECH_TO_TEXT_ENABLED` defaults to false. No Google Maps variables are used. The build rejects missing, localhost, non-HTTPS or credential-bearing API URLs. Rebuild after changing Vite flags. Keep the exact Firebase frontend origins in the existing Render CORS allowlist. Set backend `SPEECH_TO_TEXT_ENABLED=false`; Speech project/credential variables are optional unless re-enabled. These instructions do not modify production environment values automatically.
 
-All `VITE_` values are browser-visible. Never include Gemini keys, database credentials or service-account credentials. The Maps browser key is intentionally public at runtime; restrict it by HTTP referrer and to Maps JavaScript API.
+All `VITE_` values are browser-visible. Never include Gemini keys, database credentials or service-account credentials. No Maps browser key is needed in the post-hackathon configuration.
 
 ## Testing and validation
 
-Latest completed automated validation after civic-content validation:
+Latest completed automated validation for the post-hackathon configuration:
 
-- **281 backend tests passed**.
+- **283 backend tests passed**.
 - **71 frontend tests passed** (Node API-loader tests plus Vitest component tests).
 - Frontend production build passed.
 - **78 JavaScript syntax checks passed**.
@@ -566,7 +577,7 @@ Provide the production build variables documented above before building. Prisma 
 
 ## Security
 
-Never commit .env files, Gemini API keys, database credentials, Google service-account JSON, Aiven CA files or server credentials. Commit placeholder-only .env.example files. Build output, dependencies and raw source workbooks/exports remain ignored. VITE_ variables are public browser configuration, never server-secret storage. Restrict the Maps browser key to approved HTTP referrers and Maps JavaScript API.
+Never commit .env files, Gemini API keys, database credentials, Google service-account JSON, Aiven CA files or server credentials. Commit placeholder-only .env.example files. Build output, dependencies and raw source workbooks/exports remain ignored. VITE_ variables are public browser configuration, never server-secret storage. Historical Google Maps deployments used a referrer/API-restricted browser key; it is no longer used by this frontend.
 
 CORS is not authentication. No authentication has been implemented. Review access control, abuse prevention and service quotas before broader public use. The existing dependency-audit finding in Prisma → @prisma/config → deepmerge-ts ([GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx)) requires a separately reviewed dependency update; no dependency changes are part of this documentation update.
 
@@ -578,6 +589,7 @@ CORS is not authentication. No authentication has been implemented. Review acces
 - JJM reports tap connections, not independently verified quality, reliability, pressure or regular service.
 - Only Rural Water currently has deep official-data integration; the evidence dashboard covers eight verified districts.
 - AI interpretations and civic semantic validation can be imperfect; human review and local verification remain necessary.
+- Voice is disabled by default; map tiles require network access. Core typed analysis still depends on Gemini availability and cost.
 - No authentication or submission idempotency keys; repeated successful submissions create separate records.
 
 ## Future scope

@@ -40,3 +40,6 @@ export function proxyHops(env = process.env) {
   if (!/^[0-5]$/.test(value)) throw new Error('TRUST_PROXY_HOPS must be an integer from 0 to 5');
   return Number(value);
 }
+
+// Opt-in only; absent or unrecognized values stay disabled.
+export const speechToTextEnabled = (env = process.env) => env.SPEECH_TO_TEXT_ENABLED === 'true';

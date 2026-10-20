@@ -2,10 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { rateLimit } from 'express-rate-limit';
 import { transcribe } from '../controllers/speech.controller.js';
-import { MAX_AUDIO_BYTES, SPEECH_LANGUAGES, validSpeechDistrict } from '../config/speech.js';
+import { MAX_AUDIO_BYTES, SPEECH_LANGUAGES, validSpeechDistrict, speechToTextEnabled } from '../config/speech.js';
 import { ServiceError } from '../errors/serviceError.js';
 
-export function createSpeechRouter({ limit = process.env.NODE_ENV === 'production' ? 5 : 30, windowMs = 10 * 60 * 1000 } = {}) {
+export function createSpeechRouter({ limit = process.env.NODE_ENV === 'production' ? 5 : 30, windowMs = 10 * 60 * 1000, enabled = speechToTextEnabled } = {}) {
   const router = Router();
   const rateOptions = { windowMs, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { success: false, message: 'Too many transcription requests. Please try again later.' } };
@@ -18,7 +18,10 @@ export function createSpeechRouter({ limit = process.env.NODE_ENV === 'productio
       cb(['audio/webm', 'audio/webm;codecs=opus'].includes(file.mimetype) ? null : new ServiceError('SPEECH_FORMAT'), true);
     },
   }).single('audio');
-  router.post('/transcribe', globalLimit, perClientLimit, (req, res, next) => {
+  router.post('/transcribe', (req, res, next) => {
+    if (!enabled()) return res.status(503).json({ success: false, message: 'Voice transcription is currently disabled.' });
+    next();
+  }, globalLimit, perClientLimit, (req, res, next) => {
     upload(req, res, error => {
       if (error) return next(error instanceof ServiceError ? error : new ServiceError(error.code === 'LIMIT_FILE_SIZE' ? 'SPEECH_SIZE' : 'SPEECH_INPUT'));
       if (!SPEECH_LANGUAGES.includes(req.body?.languageCode) || Object.keys(req.body).some(key => !['languageCode', 'districtName'].includes(key))

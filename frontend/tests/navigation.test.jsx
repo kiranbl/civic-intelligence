@@ -4,7 +4,7 @@ import Home from '../src/pages/Home';
 import { loadDashboard } from '../src/services/api';
 vi.mock('../src/services/api', () => ({ loadDashboard: vi.fn(), getDistrictRequests: vi.fn(async () => []), getWaterPlanning: vi.fn(async () => []), analyzeRequest: vi.fn(async () => ({ language: 'en', category: 'WATER', areaType: 'RURAL', urgency: 'HIGH', subcategory: 'WATER_SUPPLY_INTERRUPTION', summaryEnglish: 'Water stopped', locationText: null, confidence: .9, model: 'mock' })) }));
 vi.mock('../src/components/DistrictMap', () => ({ default: ({ selected, onSelect }) => <div data-testid="shared-map">Map selection: {selected}<button onClick={() => onSelect(2)}>Map selects Kolar</button></div> }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
 async function mount() {
   loadDashboard.mockResolvedValue({ connected: true, districts: [{ id: 1, name: 'Mandya' }, { id: 2, name: 'Kolar' }], analytics: { data: [1, 2].map(id => ({ districtId: id, districtName: id === 1 ? 'Mandya' : 'Kolar', dataCompleteness: 'INCOMPLETE' })) }, citizenDemand: { totalRequests: 0, categoryBreakdown: [], urgencyBreakdown: [], areaTypeBreakdown: [], districtBreakdown: [], recentRequests: [] } });
   render(<Home />); await screen.findByText('From citizen voices to development intelligence');
@@ -46,7 +46,7 @@ test('arrow keys, Home and End move tab focus and selection', async () => {
 
 
 test('all district and voice selects share native styling, labels and change behavior', async () => {
- await mount(); tab('District Intelligence');
+ vi.stubEnv('VITE_SPEECH_TO_TEXT_ENABLED', 'true'); await mount(); tab('District Intelligence');
  const exploration=screen.getByLabelText('Explore district');expect(exploration.classList.contains('civic-select')).toBe(true);
  fireEvent.change(exploration,{target:{value:'2'}});expect(exploration.value).toBe('2');
  tab('Submit Request');
@@ -67,4 +67,11 @@ test('Overview action reuses primary action styling and opens Citizen Demand', a
   expect(screen.getByRole('tab', { name: 'Citizen Demand' }).getAttribute('aria-selected')).toBe('true');
   expect(screen.getByRole('heading', { name: 'Citizen Demand Intelligence' })).toBeTruthy();
   expect(loadDashboard).toHaveBeenCalledTimes(1);
+});
+
+for (const value of [undefined, 'false']) test(`voice disabled (${value}) retains multilingual text workflow without microphone`, async () => {
+ vi.stubEnv('VITE_SPEECH_TO_TEXT_ENABLED',value);await mount();tab('Submit Request');
+ expect(screen.queryByRole('button',{name:/Start recording/i})).toBeNull();expect(screen.getByText(/Voice input is disabled in the post-hackathon deployment/)).toBeTruthy();
+ for(const language of ['English','Kannada','Hindi']){fireEvent.click(screen.getByRole('button',{name:language}));expect(screen.getByLabelText(/Request text/).value.length).toBeGreaterThan(10);}
+ expect(screen.getByRole('button',{name:'Analyze Request'})).toBeTruthy();
 });

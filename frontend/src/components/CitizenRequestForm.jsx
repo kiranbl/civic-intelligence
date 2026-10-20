@@ -1,3 +1,4 @@
+import { speechEnabled } from '../config/features';
 import { useRef, useState } from 'react';
 import { analyzeRequest, submitRequest } from '../services/api';
 import AnalysisPreview from './AnalysisPreview';
@@ -71,7 +72,7 @@ export default function CitizenRequestForm({ districts, onSubmitted, onVoiceBusy
           <textarea ref={textarea} id="request-text" rows="4" required maxLength={MAX_LENGTH} value={text} onChange={e => edit(e.target.value)} aria-describedby="request-counter request-help" />
           <div className="request-tools"><small id="request-counter">{text.length.toLocaleString('en-IN')} / {MAX_LENGTH.toLocaleString('en-IN')} characters</small><div className="examples"><span>Demo examples:</span>{Object.entries(samples).map(([language, sample]) => <button type="button" className="sample" key={language} onClick={() => edit(sample)}>{language}</button>)}</div></div>
           <p id="request-help" className="fine">You choose the district. Analyze previews the interpretation without saving. This is a prototype demonstration dataset.</p>
-          </div><VoiceInput disabled={Boolean(pending)} districtName={districts.find(d => d.id === Number(districtId))?.name} onTranscript={appendTranscript} onBusyChange={value => { setVoiceBusy(value); onVoiceBusyChange?.(value); }} /></div>
+          </div>{speechEnabled() ? <VoiceInput disabled={Boolean(pending)} districtName={districts.find(d => d.id === Number(districtId))?.name} onTranscript={appendTranscript} onBusyChange={value => { setVoiceBusy(value); onVoiceBusyChange?.(value); }} /> : <aside className="voice-input"><h3>Voice input</h3><p>Voice input is disabled in the post-hackathon deployment. Text requests remain available in English, Kannada and Hindi.</p></aside>}</div>
           {!preview && <div className="form-actions"><button className="retry" type="submit" disabled={voiceBusy || !validDistrict || !text.trim() || text.length > MAX_LENGTH}>Analyze Request</button><button className="secondary" type="button" onClick={clear}>Clear</button></div>}
         </fieldset>
       </form>
